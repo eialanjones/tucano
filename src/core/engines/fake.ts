@@ -111,6 +111,12 @@ export function fakeEngine(id: Engine['id'], opts: { delayMs?: number; reply?: (
       } else if (/gaste (\d+) tokens/i.test(last)) {
         spend = Number(/gaste (\d+) tokens/i.exec(last)![1])
         reply = 'Instalei o Swift e li o módulo de sorteio. Falta rodar os testes do Core e conferir o filtro de questões recentes.'
+      } else if (turn.mcpUrl && /esque[cç][ae] que (.+)/i.test(last)) {
+        // "esquece que X": forgets the memory listed as "- [id] X" in what the turn sees.
+        const texto = /esque[cç][ae] que (.+)/i.exec(last)![1]!.trim()
+        const seen = [turn.system, turn.prompt, ...(turn.blocks ?? [])].join('\n')
+        const id = seen.split('\n').find((l) => l.endsWith(`] ${texto}`))?.match(/^- \[([^\]]+)\]/)?.[1] ?? texto
+        reply = textOf(await callTool(turn.mcpUrl, 'esquecer', { id, motivo: 'pedido do usuário' }))
       } else if (turn.mcpUrl && /lembr[ae] que (.+)/i.test(last)) {
         const texto = /lembr[ae] que (.+)/i.exec(last)![1]!.trim()
         await callTool(turn.mcpUrl, 'lembrar', { texto, sobre: 'usuario' })

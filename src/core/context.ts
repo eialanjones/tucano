@@ -128,8 +128,8 @@ export function systemPrompt(opts: PromptOpts): string {
       ),
       canRemember &&
         L(
-          `- Quando aprender algo que vai continuar valendo em outras conversas (uma preferência de ${me}, um jeito de trabalhar, um fato durável do projeto), guarde com a ferramenta lembrar, uma ideia por vez. Se algo lembrado mudou, use substitui com o id. Não guarde o que só importa nesta conversa.`,
-          `- When you learn something that will keep holding in other conversations (a preference of ${me}'s, a way of working, a lasting fact about the project), save it with the lembrar tool, one idea at a time. If something remembered changed, use substitui with its id. Don't save what only matters in this conversation.`
+          `- Quando aprender algo que vai continuar valendo em outras conversas (uma preferência de ${me}, um jeito de trabalhar, um fato durável do projeto), guarde com a ferramenta lembrar, uma ideia por vez. Se algo lembrado mudou, use substitui com o id. Não guarde o que só importa nesta conversa. Quando ${me} pedir pra esquecer algo, use esquecer com o id da memória.`,
+          `- When you learn something that will keep holding in other conversations (a preference of ${me}'s, a way of working, a lasting fact about the project), save it with the lembrar tool, one idea at a time. If something remembered changed, use substitui with its id. Don't save what only matters in this conversation. When ${me} asks you to forget something, use esquecer with the memory's id.`
         ),
       routines &&
         L(

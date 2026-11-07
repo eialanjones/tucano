@@ -11,6 +11,7 @@ import { ENGINES, personScope, scopePerson, usable, modelInfo, splitForPrompt, S
 import type { Db } from './db'
 import type { Engine } from './engines/types'
 import type { ToolDef } from './gateway'
+import { can } from './policy-people'
 
 export const WINDOW = SUMMARY_WINDOW
 export const MAX_AFTER = SUMMARY_MAX_AFTER
@@ -71,6 +72,26 @@ export const LEMBRAR: ToolDef = {
         substitui: { type: 'string', description: L('Id de uma memória que esta atualiza, quando algo mudou.', 'Id of a memory this one updates, when something changed.') }
       },
       required: ['texto', 'sobre']
+    }
+  }
+}
+
+export const ESQUECER: ToolDef = {
+  name: 'esquecer',
+  get description() {
+    return L(
+      'Esquece uma memória: ela sai do prompt na hora e não é aprendida de novo. Use só quando a pessoa pedir pra esquecer, ou disser que a memória está errada e não há o que pôr no lugar (pra corrigir, use lembrar com "substitui"). Nunca por conta própria.',
+      "Forgets a memory: it leaves the prompt right away and isn't learned again. Use it only when the person asks you to forget, or says the memory is wrong and there's nothing to put in its place (to correct it, use lembrar with \"substitui\"). Never on your own."
+    )
+  },
+  get inputSchema() {
+    return {
+      type: 'object' as const,
+      properties: {
+        id: { type: 'string', description: L('O id da memória, o que aparece entre colchetes na lista ou na busca.', 'The memory\'s id, the one in brackets in the list or the search.') },
+        motivo: { type: 'string', description: L('Por quê, em poucas palavras (ex.: "pedido do usuário").', 'Why, in a few words (e.g. "the user asked").') }
+      },
+      required: ['id']
     }
   }
 }
@@ -673,6 +694,25 @@ export class Memories {
     return active
       ? { memory: r.memory, label: L('Guardou na memória', 'Saved to memory'), reply: L('Guardado. Siga com a resposta sem anunciar que guardou.', 'Saved. Go on with your reply without announcing you saved it.') }
       : { memory: r.memory, label: L('Quer guardar na memória', 'Wants to save to memory'), reply: L('Virou um pedido: o usuário decide se guarda. Siga com a resposta.', 'It became a request: the user decides whether to save it. Go on with your reply.') }
+  }
+
+  // Called by the runner when an agent uses `esquecer`, for `person` (who "the user" is in this reply).
+  // A memory about them or the agent's own note, readable here, and one they may forget on the
+  // Memory screen too: in a team, an agent's shared notes are the admins' (`can`, as `forgetMemory`).
+  forgetFor(agent: Agent, conv: Conversation, args: Record<string, unknown>, person: Person = this.deps.db.owner()): { memory?: Memory; reply: string; error?: boolean } {
+    const personId = person.id
+    const id = typeof args['id'] === 'string' ? args['id'].trim().replace(/^\[|\]$/g, '') : ''
+    if (!id) return { reply: L('Faltou o id da memória.', "Missing the memory's id."), error: true }
+    const m = this.deps.db.memory(id)
+    const mine = !!m && (m.scope === personScope(personId) || m.scope === agent.id) && (m.privateTo === undefined || m.privateTo === personId) && this.readableIn(conv)(m)
+    if (!m || !mine) return { reply: L(`Não achei a memória ${id}. Use o id entre colchetes da lista ou de buscar_memorias.`, `I couldn't find memory ${id}. Use the id in brackets from the list or from buscar_memorias.`), error: true }
+    if (!can(person, { kind: 'memory', scope: m.scope, ...(m.privateTo ? { privateTo: m.privateTo } : {}) }))
+      return { reply: L(`Só um admin esquece suas notas de trabalho. Diga a ${person.name} que um admin pode esquecer na tela Memória.`, `Only an admin forgets your working notes. Tell ${person.name} an admin can forget it on the Memory screen.`), error: true }
+    if (m.state === 'forgotten') return { reply: L('Essa memória já estava esquecida.', 'That memory was already forgotten.') }
+    if (m.state !== 'active' && m.state !== 'pending') return { reply: L(`A memória ${id} não está em uso; não há o que esquecer.`, `Memory ${id} isn't in use; there's nothing to forget.`), error: true }
+    const reason = typeof args['motivo'] === 'string' && args['motivo'].trim() ? args['motivo'].trim().slice(0, 200) : undefined
+    this.forget(id, reason)
+    return { memory: m, reply: L('Esquecida: saiu do prompt e não volta a ser aprendida. Siga com a resposta.', "Forgotten: it left the prompt and won't be learned again. Go on with your reply.") }
   }
 
   add(scope: MemoryScope, text: string): void {

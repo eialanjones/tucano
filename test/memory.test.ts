@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { CoreEvent } from '../src/shared/rpc'
-import { personScope, type Agent, type Author, type EngineId, type Message, type Settings } from '../src/shared/types'
+import { personScope, type Agent, type Author, type EngineId, type Memory, type Message, type Settings } from '../src/shared/types'
 import { Db } from '../src/core/db'
 import { fakeEngine } from '../src/core/engines/fake'
 import type { Engine, Turn } from '../src/core/engines/types'
@@ -256,6 +256,66 @@ describe('lembrar (long term)', () => {
     expect(r.memory?.state).toBe('active')
     expect(db.memory(old!.id)?.state).toBe('archived')
     expect(active()).toEqual(['usa o projeto Pagamentos no Linear'])
+  })
+})
+
+describe('esquecer', () => {
+  const save = (id: string, text: string, extra: Partial<Memory> = {}): void =>
+    db.saveMemory({ id, scope: personScope(db.ownerId()), text, state: 'active', origin: 'me', messageIds: [], createdAt: clock, confirmedAt: clock, ...extra })
+
+  it('an agent forgets a memory when I ask, and it leaves every prompt', async () => {
+    save('mem1', 'eu prefiro PR pequeno')
+    await runner.send('d1', 'esquece que eu prefiro PR pequeno')
+    await settle()
+    expect(db.memory('mem1')).toMatchObject({ state: 'forgotten', reason: 'pedido do usuário' })
+    const reply = db.messages().find((m) => m.author.kind === 'agent')!
+    expect(reply.run?.steps.find((s) => s.label === 'Esqueceu da memória')?.detail).toBe('eu prefiro PR pequeno')
+
+    await runner.send('c1', '@theo oi')
+    await settle()
+    expect(agentTurns('theo')[0]!.prompt).not.toContain('PR pequeno')
+    // Forgotten stays forgotten: saving it again is refused.
+    expect(memory.remember(db.agent('a1')!, db.conversation('d1')!, { texto: 'eu prefiro PR pequeno', sobre: 'usuario' }).memory).toBeUndefined()
+  })
+
+  it('an agent set to "só lê" does not get the tool', async () => {
+    db.saveAgent(agent('a1', 'lia', { memory: 'read' }))
+    save('mem1', 'eu prefiro PR pequeno')
+    await runner.send('d1', 'esquece que eu prefiro PR pequeno')
+    await settle()
+    expect(db.memory('mem1')?.state).toBe('active')
+  })
+
+  it("does not reach another agent's notes, another person's DM memory, or an unknown id", () => {
+    db.saveMemory({ id: 'note', scope: 'a2', text: 'nota do theo', state: 'active', origin: 'agent', messageIds: [], createdAt: clock, confirmedAt: clock })
+    save('dm', 'segredo da DM', { privateTo: 'someone-else' })
+    const lia = db.agent('a1')!
+    for (const id of ['note', 'dm', 'nope']) {
+      const r = memory.forgetFor(lia, db.conversation('c1')!, { id })
+      expect(r.error).toBe(true)
+      expect(r.memory).toBeUndefined()
+    }
+    expect(db.memory('note')?.state).toBe('active')
+    expect(db.memory('dm')?.state).toBe('active')
+  })
+
+  it("in a team, a member can't make an agent forget its shared notes; an admin can", () => {
+    const bia = { id: 'p-bia', name: 'Bia', role: 'member' as const, about: '' }
+    db.addPerson(bia)
+    db.saveMemory({ id: 'note', scope: 'a1', text: 'roda os testes antes do PR', state: 'active', origin: 'agent', messageIds: [], createdAt: clock, confirmedAt: clock })
+    const r = memory.forgetFor(db.agent('a1')!, db.conversation('c1')!, { id: 'note' }, bia)
+    expect(r).toMatchObject({ error: true })
+    expect(r.reply).toContain('Só um admin')
+    expect(db.memory('note')?.state).toBe('active')
+    expect(memory.forgetFor(db.agent('a1')!, db.conversation('c1')!, { id: 'note' }, db.owner()).memory?.id).toBe('note')
+  })
+
+  it('forgets its own note and takes the id with its brackets', () => {
+    db.saveMemory({ id: 'own', scope: 'a1', text: 'roda os testes antes do PR', state: 'active', origin: 'agent', messageIds: [], createdAt: clock, confirmedAt: clock })
+    const r = memory.forgetFor(db.agent('a1')!, db.conversation('c1')!, { id: '[own]' })
+    expect(r.memory?.id).toBe('own')
+    expect(db.memory('own')?.state).toBe('forgotten')
+    expect(memory.forgetFor(db.agent('a1')!, db.conversation('c1')!, { id: 'own' }).reply).toContain('já estava esquecida')
   })
 })
 
