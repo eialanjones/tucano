@@ -16,6 +16,7 @@ O **Contexto** em **Configurações › Geral** é outra coisa: um texto fixo qu
 - **Novas**: as sugestões esperando você **Guardar** ou **Descartar**.
 - **Ainda valem?**: memórias sem confirmação há muito tempo. Continuam no prompt até você decidir (**Ainda vale** ou **Esquecer**).
 - Cada memória pode ser editada ou esquecida. **Esquecidas** saem do prompt, e o registro impede que sejam aprendidas de novo; **Apagar de vez** remove até ele.
+- Também dá pra pedir no chat: "esquece que eu prefiro X". O agente esquece (a mensagem mostra **Esqueceu da memória**) do mesmo jeito que o botão, menos com a memória dele em **Só lê**.
 - Memórias mais antigas podem ficar fora do prompt; os agentes acham com uma busca quando precisam.
 
 ## Resumo das conversas
@@ -23,4 +24,4 @@ O modelo da memória também resume o que sai da janela das conversas longas (ro
 
 ## Quando dá errado
 - O agente "esqueceu" algo: veja se está em **Memória** e não em **Esquecidas**; ensine de novo com uma frase curta.
-- Guardou algo errado: edite ou **Esquecer** na tela Memória.
+- Guardou algo errado: edite ou **Esquecer** na tela Memória, ou peça ao agente pra esquecer.
