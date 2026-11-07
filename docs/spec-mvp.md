@@ -179,7 +179,7 @@ Referências: o modelo do **Honcho** (participantes e conversas, resumos por ses
 
 **Esquecer**
 
-- **Esquecer** (por mim, ou o Desfazer do chat) tira a memória do prompt na hora e guarda um registro do que foi esquecido. A extração recebe esses registros como "não reaprender", e o app descarta qualquer memória nova igual a uma esquecida. Isso evita o problema do Honcho, em que uma conclusão apagada volta porque as mensagens de origem continuam lá.
+- **Esquecer** (por mim, pelo Desfazer do chat, ou pelo agente com a ferramenta `esquecer` quando eu peço) tira a memória do prompt na hora e guarda um registro do que foi esquecido. A extração recebe esses registros como "não reaprender", e o app descarta qualquer memória nova igual a uma esquecida. Isso evita o problema do Honcho, em que uma conclusão apagada volta porque as mensagens de origem continuam lá.
 - **Apagar de vez** remove até o registro (aí pode ser aprendida de novo).
 - **Envelhecer sem sumir:** memória sem confirmação há 60 dias vai pra **Revisar** ("ainda vale?"). Nada some sozinho. A consolidação confirma uma memória quando a conversa reforça ela.
 

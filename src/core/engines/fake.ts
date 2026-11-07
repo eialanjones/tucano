@@ -180,6 +180,12 @@ export function fakeEngine(id: Engine['id'], opts: { delayMs?: number; reply?: (
         await callTool(turn.mcpUrl, 'buscar_memorias', { busca: texto })
         await new Promise((ok) => setTimeout(ok, Number(process.env['TUCANO_FAKE_HOLD_MS'] ?? 6000)))
         reply = L('Guardei e procurei de volta.', 'I saved it and searched it back.')
+      } else if (turn.mcpUrl && /esque[cç][ae] que (.+)/i.test(last)) {
+        // "esquece que X": forgets the memory listed as "- [id] X" in what the turn sees.
+        const texto = /esque[cç][ae] que (.+)/i.exec(last)![1]!.trim()
+        const seen = [turn.system, turn.prompt, ...(turn.blocks ?? [])].join('\n')
+        const id = seen.split('\n').find((l) => l.endsWith(`] ${texto}`))?.match(/^- \[([^\]]+)\]/)?.[1] ?? texto
+        reply = textOf(await callTool(turn.mcpUrl, 'esquecer', { id, motivo: 'pedido do usuário' }))
       } else if (turn.mcpUrl && /lembr[ae] que (.+)/i.test(last)) {
         const texto = /lembr[ae] que (.+)/i.exec(last)![1]!.trim()
         await callTool(turn.mcpUrl, 'lembrar', { texto, sobre: 'usuario' })
