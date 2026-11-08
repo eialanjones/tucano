@@ -350,6 +350,8 @@ export class ConnectorManager {
       if (url.protocol !== 'https:' && url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') throw new Error(L('Use uma URL https.', 'Use an https URL.'))
       this.deps.db.saveConnector({ id, name, kind: 'remote', url: url.toString(), auth: input.auth ?? 'none' })
       if (input.auth === 'token' && input.token) await this.deps.secrets.set(key(id, 'token'), input.token.trim())
+      const clientId = input.clientId?.trim()
+      if (input.auth === 'oauth' && clientId) await this.deps.secrets.set(key(id, 'oauth_client_id'), clientId)
     } else {
       const command = input.command?.trim()
       if (!command) throw new Error(L('Informe o comando.', 'Enter the command.'))
@@ -484,7 +486,9 @@ export class ConnectorManager {
           const token = await this.deps.secrets.get(key(id, 'token'))
           if (token) headers['Authorization'] = `Bearer ${await resolveOp(token, this.deps.readOp)}`
         }
-        const provider = c.auth === 'oauth' ? this.oauthProvider(id, () => http, interactive, own) : undefined
+        // A Client ID the service handed out (Conta Simples, for one): no self-registration for this connector.
+        const fixedClient = c.auth === 'oauth' && !own ? await this.deps.secrets.get(key(id, 'oauth_client_id')) : undefined
+        const provider = c.auth === 'oauth' ? this.oauthProvider(id, () => http, interactive, own, fixedClient) : undefined
         const fetchFn = c.auth === 'oauth' ? this.renewingFetch(renewal) : undefined
         const http: StreamableHTTPClientTransport = new StreamableHTTPClientTransport(new URL(c.url!), {
           requestInit: { headers },
@@ -558,8 +562,8 @@ export class ConnectorManager {
           id,
           'error',
           L(
-            'Esse servidor não deixa apps se registrarem pelo navegador. Adicione de novo com autenticação por token (no GitHub: um token de acesso pessoal, em github.com/settings/personal-access-tokens).',
-            "This server doesn't let apps register through the browser. Add it again with token authentication (on GitHub: a personal access token, from github.com/settings/personal-access-tokens)."
+            'Esse servidor não deixa apps se registrarem pelo navegador. Adicione de novo com o Client ID que o serviço informa (em OAuth) ou com autenticação por token (no GitHub: um token de acesso pessoal, em github.com/settings/personal-access-tokens).',
+            "This server doesn't let apps register through the browser. Add it again with the Client ID the service gives out (under OAuth) or with token authentication (on GitHub: a personal access token, from github.com/settings/personal-access-tokens)."
           )
         )
       } else if (e instanceof Error && /timed out/i.test(e.message)) {
@@ -794,9 +798,12 @@ export class ConnectorManager {
   }
 
   // `own`: a server that signs in with the person's own app (Google's, Slack's) instead of registering one.
-  private oauthProvider(id: string, transport: () => StreamableHTTPClientTransport, interactive: boolean, own?: CatalogEntry['app']): OAuthClientProvider {
+  private oauthProvider(id: string, transport: () => StreamableHTTPClientTransport, interactive: boolean, own?: CatalogEntry['app'], fixedClient?: string): OAuthClientProvider {
     const { secrets } = this.deps
-    const redirectUrl = own ? this.redirectFor(own.provider) : this.deps.oauthCallbackUrl()
+    // An app registered ahead of time lists its loopback return as "localhost" (Claude Code's way), so that's the
+    // address it gets; the gateway on 127.0.0.1 answers it all the same.
+    const callback = this.deps.oauthCallbackUrl()
+    const redirectUrl = own ? this.redirectFor(own.provider) : fixedClient ? callback.replace(/^http:\/\/127\.0\.0\.1:/, 'http://localhost:') : callback
     // Signing in again (someone clicked Authorize) goes on past a saved value the system's key won't open:
     // the new sign-in takes its place. In the background it stops the attempt, and the value stays.
     const read = async <T>(k: string): Promise<T | undefined> => {
@@ -834,11 +841,12 @@ export class ConnectorManager {
           const app = await secrets.getJson<OwnApp>(appKey(own.provider))
           return app && { client_id: app.clientId, client_secret: app.clientSecret }
         }
+        if (fixedClient) return { client_id: fixedClient }
         const info = await read<OAuthClientInformationMixed & { redirect_uris?: string[] }>(key(id, 'oauth_client'))
         const fits = (u: string): boolean => (interactive ? u === redirectUrl : sameLoopbackRedirect(u, redirectUrl))
         return info && (!info.redirect_uris || info.redirect_uris.some(fits)) ? info : undefined
       },
-      saveClientInformation: (info) => (own ? undefined : secrets.setJson(key(id, 'oauth_client'), { ...info, redirect_uris: [redirectUrl] })),
+      saveClientInformation: (info) => (own || fixedClient ? undefined : secrets.setJson(key(id, 'oauth_client'), { ...info, redirect_uris: [redirectUrl] })),
       // A sign-in the server turned away even renewed isn't offered when signing in again: the SDK would renew it
       // once more instead of going to the browser.
       tokens: () => (interactive && this.freshSignIn.has(id) ? Promise.resolve(undefined) : read<OAuthTokens>(key(id, 'oauth_tokens'))),

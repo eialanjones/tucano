@@ -767,6 +767,7 @@ export interface ConnectorInput {
   url?: string
   auth?: ConnectorAuth
   token?: string
+  clientId?: string // OAuth: an app the server registered ahead of time, for one with no self-registration
   command?: string
   args?: string[]
   env?: Record<string, string>

@@ -1626,6 +1626,7 @@ function AddConnector({ onDone }: { onDone: (id?: string) => void }): ReactNode 
   const [url, setUrl] = useState('')
   const [auth, setAuth] = useState<ConnectorAuth>('oauth')
   const [token, setToken] = useState('')
+  const [clientId, setClientId] = useState('')
   const [command, setCommand] = useState('')
   const [args, setArgs] = useState('')
   const [env, setEnv] = useState('')
@@ -1644,7 +1645,7 @@ function AddConnector({ onDone }: { onDone: (id?: string) => void }): ReactNode 
           .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()])
       )
       const id = await addConnector(
-        kind === 'remote' ? { kind, name, url, auth, token: auth === 'token' ? token : undefined } : { kind, name, command, args: splitArgs(args), env: envMap }
+        kind === 'remote' ? { kind, name, url, auth, token: auth === 'token' ? token : undefined, clientId: auth === 'oauth' && clientId.trim() ? clientId : undefined } : { kind, name, command, args: splitArgs(args), env: envMap }
       )
       onDone(id)
     } catch (e) {
@@ -1684,6 +1685,11 @@ function AddConnector({ onDone }: { onDone: (id?: string) => void }): ReactNode 
               placeholder={L('Escolha a autenticação', 'Pick an authentication')}
             />
           </Field>
+          {auth === 'oauth' && (
+            <Field label={L('Client ID (opcional)', 'Client ID (optional)')} hint={L('Só se o serviço informar um, como a Conta Simples. Em branco, o Tucano se registra sozinho.', 'Only if the service gives you one. Left blank, Tucano registers itself.')}>
+              <input value={clientId} onChange={(e) => setClientId(e.target.value)} />
+            </Field>
+          )}
           {auth === 'token' && (
             <Field label="Token" hint={L('Ou uma referência do 1Password (op://Cofre/Item/campo), lida a cada conexão.', 'Or a 1Password reference (op://Vault/Item/field), read on each connection.')}>
               <input type="password" value={token} onChange={(e) => setToken(e.target.value)} />
