@@ -184,10 +184,12 @@ it('takes a change back for a moment, from the board or with ⌘Z', async () => 
 })
 
 it('says why a line that would be too long does not hold', async () => {
-  // Under Nico, the third of its line, Solo would be a fourth.
-  await pull('nico', 'out', 'solo')
+  // Under Lua, the fourth of its line, Solo would be a fifth.
+  fake = { ...fake, agents: [...fake.agents, bot('lua', 'nico')] }
+  await render()
+  await pull('lua', 'out', 'solo')
   expect(save).not.toHaveBeenCalled()
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Uma linha tem no máximo 3 agentes')
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Uma linha tem no máximo 4 agentes')
   // A loop says nothing: the card was dimmed, and that is reason enough.
   await pull('clara', 'out', 'solo')
   expect(document.querySelector('[role="alert"]')).toBeNull()
@@ -246,8 +248,8 @@ it('opens what there is to know about an agent on a click, and changes whom it a
   expect(side.textContent).toContain('nico')
   // Whom it may answer to: not itself, nor the one below it.
   const select = side.querySelector('select')!
-  // Whom it may answer to: not itself, nor the one below it, nor one that would make its line too long (Clara, with Nico below it).
-  expect([...select.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Ninguém', 'orion', 'solo'])
+  // Whom it may answer to: not itself, nor the one below it (Clara fits: orion, clara, bento, nico is four).
+  expect([...select.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Ninguém', 'orion', 'clara', 'solo'])
   await act(async () => { Object.defineProperty(select, 'value', { configurable: true, value: 'solo' }); select.dispatchEvent(new window.Event('change', { bubbles: true })) })
   expect(save.mock.calls[0]![0]).toMatchObject({ id: 'bento', reportsTo: 'solo' })
   // Its page and its DM are a click away (twice on the card is the DM too); a press on the board closes it.

@@ -27,25 +27,29 @@ describe('who answers to whom', () => {
     expect(loops(team, 'orion', 'orion')).toBe(true)
     expect(loops(team, 'nico', 'orion')).toBe(false)
     const withOthers = [...team, a('tuca', undefined, { kind: 'tuca' }), a('old', undefined, { archived: true })]
-    // Bento has people below: under Atlas, Clara or Otto its line would be too long (see the next one).
-    expect(ids(possibleBosses(withOthers, 'bento'))).toEqual(['orion', 'solo'])
-    expect(ids(possibleBosses(withOthers, 'atlas'))).toEqual(['orion', 'bento', 'clara', 'solo'])
+    // Bento has people below: under Otto its line would be too long (see the next one).
+    expect(ids(possibleBosses(withOthers, 'bento'))).toEqual(['orion', 'atlas', 'clara', 'solo'])
+    // Atlas has no one below: it fits under anyone at the third level.
+    expect(ids(possibleBosses(withOthers, 'atlas'))).toEqual(['orion', 'bento', 'clara', 'nico', 'vera', 'otto', 'solo'])
   })
 
-  it('keeps a line to three agents from top to bottom', () => {
-    expect(MAX_LINE).toBe(3)
-    expect([rankOf(team, 'orion'), rankOf(team, 'bento'), rankOf(team, 'nico'), rankOf(team, 'solo'), rankOf(team, 'nobody')]).toEqual([1, 2, 3, 1, 1])
+  it('keeps a line to four agents from top to bottom', () => {
+    expect(MAX_LINE).toBe(4)
+    // Lua under Nico makes Orion's line full: orion, bento, nico, lua.
+    const deep = [...team, a('lua', 'nico')]
+    expect([rankOf(deep, 'orion'), rankOf(deep, 'bento'), rankOf(deep, 'nico'), rankOf(deep, 'lua'), rankOf(deep, 'solo'), rankOf(deep, 'nobody')]).toEqual([1, 2, 3, 4, 1, 1])
     // Under someone at the bottom of a full line: one too many.
-    expect(overLine(team, 'solo', 'nico')).toBe(true)
-    expect(overLine(team, 'solo', 'bento')).toBe(false)
+    expect(overLine(deep, 'solo', 'lua')).toBe(true)
+    expect(overLine(deep, 'solo', 'nico')).toBe(false)
     // With someone below, it's the whole branch that has to fit.
-    expect(overLine(team, 'bento', 'atlas')).toBe(true)
-    expect(overLine(team, 'bento', 'solo')).toBe(false)
-    expect(overLine(team, 'orion', 'solo')).toBe(true) // Orion has two levels below already
+    expect(overLine(team, 'bento', 'otto')).toBe(true)
+    expect(overLine(team, 'bento', 'atlas')).toBe(false)
+    expect(overLine(team, 'orion', 'solo')).toBe(false) // Orion has two levels below: under Solo it makes four
+    expect(overLine(deep, 'orion', 'solo')).toBe(true) // three levels below already
     // An archived one in the middle doesn't count: whoever answered to it answers to its boss meanwhile.
-    const gone = team.map((x) => (x.id === 'bento' ? { ...x, archived: true } : x))
-    expect(rankOf(gone, 'nico')).toBe(2)
-    expect(overLine(gone, 'solo', 'nico')).toBe(false)
+    const gone = deep.map((x) => (x.id === 'bento' ? { ...x, archived: true } : x))
+    expect(rankOf(gone, 'lua')).toBe(3)
+    expect(overLine(gone, 'solo', 'lua')).toBe(false)
     // A loop left by hand ends the count.
     expect(rankOf([a('x', 'y'), a('y', 'x')], 'x')).toBe(2)
   })

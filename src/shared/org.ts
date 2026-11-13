@@ -55,14 +55,14 @@ export const reachOf = <T extends Node>(agents: T[], id: string): T[] => {
 }
 
 // The most requests one piece of work stacks up, each made inside the thread of the one before.
-export const MAX_CHAIN = 3
+export const MAX_CHAIN = 4
 
 // Whether `id` answering to `boss` would close a loop (or is itself, or is below itself).
 export const loops = (agents: Node[], id: string, boss: string): boolean => id === boss || reportsOf(agents, id).some((a) => a.id === boss)
 
 // The most agents a line holds from top to bottom. Each one more is another model reply between the
 // person and the work: slower, dearer, and something is lost every time it is retold.
-export const MAX_LINE = 3
+export const MAX_LINE = 4
 
 // How many agents there are from the top of its line down to `id`, itself included: 1 answering to no one.
 export function rankOf(agents: Node[], id: string): number {

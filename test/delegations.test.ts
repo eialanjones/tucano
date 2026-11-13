@@ -253,15 +253,16 @@ describe('work handed down the tree', () => {
     expect(by('nico', 'dn')[0]?.text).toContain('Você não alcança ninguém chamado "clara". Quem você alcança: @duda.')
   })
 
-  it('stops a piece of work from stacking more than three requests', async () => {
+  it('stops a piece of work from stacking more than four requests', async () => {
     db.saveAgent(agent('duda', { reportsTo: 'orion' }))
     db.saveAgent(agent('eva', { reportsTo: 'orion' }))
+    db.saveAgent(agent('fia', { reportsTo: 'orion' }))
     const r = runner()
-    await r.send('dm', 'delegue a clara: delegue a bento: delegue a duda: delegue a eva: mais um')
+    await r.send('dm', 'delegue a clara: delegue a bento: delegue a duda: delegue a eva: delegue a fia: mais um')
     await r.idle()
-    const duda = db.conversations().find((c) => c.kind === 'dm' && c.name === 'duda')!
-    expect(by('duda', duda.id).some((m) => m.text.includes('já passou por 3 pedidos seguidos'))).toBe(true)
-    expect(db.conversations().some((c) => c.kind === 'dm' && c.name === 'eva')).toBe(false)
+    const eva = db.conversations().find((c) => c.kind === 'dm' && c.name === 'eva')!
+    expect(by('eva', eva.id).some((m) => m.text.includes('já passou por 4 pedidos seguidos'))).toBe(true)
+    expect(db.conversations().some((c) => c.kind === 'dm' && c.name === 'fia')).toBe(false)
     expect(db.openDelegations()).toEqual([])
   })
 
