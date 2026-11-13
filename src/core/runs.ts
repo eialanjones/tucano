@@ -873,6 +873,12 @@ export class Runner {
       ...(status.loggedIn ? [{}] : []),
       ...(dataDir ? (settings.accounts ?? []).filter((a) => a.engine === model.engine && a.loggedIn).map((a) => ({ account: a, folder: accountDir(dataDir, a.id) })) : [])
     ]
+    // Balancing: the login with the most left goes first.
+    if (settings.accountUse === 'balance') {
+      const now = Date.now()
+      const left = new Map(loginsOf(settings, model.engine).map((l) => [l.id, leftOf(l, now)]))
+      logins.sort((a, b) => (left.get(b.account?.id ?? USUAL_LOGIN) ?? 1) - (left.get(a.account?.id ?? USUAL_LOGIN) ?? 1))
+    }
     let last: { result: R; account?: Account; spent: boolean } | undefined
     let ms = 0
     for (const { account, folder } of logins) {
