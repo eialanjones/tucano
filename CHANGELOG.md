@@ -4,6 +4,12 @@ What changed in each version of Tucano. The format follows [Keep a Changelog](ht
 
 ## [Unreleased]
 
+### Added
+
+- **ElevenLabs in the connector store.** Agents get speech, transcription, music and the account's voice agents through ElevenLabs' official server. Its line in the store says that generating spends the account's credits; the Tuca's guide adds that an audio link lasts about 2 hours.
+
+- **A Tucano on a server signs in to services that take no app registration.** Some authorization servers (ElevenLabs') don't let an app register itself. Instead they read its description from an https address, a "client ID metadata document". A server with an https `TUCANO_URL` now serves one at `/oauth/client.json`, holding only its name and where sign-ins come back, and signs in with it. A server that offers both ways now gets this one when it registers again. The desktop app has no public address, so it says plainly that such a service connects only from a server, instead of the generic registration error.
+
 ### Fixed
 
 - **A monthly limit typed as a huge number no longer stops the workspace from opening.** An agent's limit was written as given, with no top. A number too large to read back (someone typing a very large one to mean "no limit") made every read of the agents fail: the app showed "Tucano stopped working" and reopening did nothing, until the row was fixed by hand in the database. A limit that large is now kept as what was meant, 0 (no limit), wherever it is written: the agent's page, Settings, the Tuca's proposal and an import. A workspace that already has one is put right when it opens.
