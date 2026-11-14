@@ -186,7 +186,9 @@ export function OrgPage(): ReactNode {
   }
   const begin = (g: Gesture): void => {
     gesture.current = g
-    const onMove = (e: PointerEvent): void => {
+    let frame = 0
+    let last: PointerEvent | null = null
+    const apply = (e: PointerEvent): void => {
       if (g.kind === 'pan') (mine.current = true), setView({ ...g.view, x: g.view.x + e.clientX - g.x, y: g.view.y + e.clientY - g.y })
       else if (g.kind === 'link') setLink({ from: g.from, side: g.side, to: toBoard(view, local(e)) })
       else {
@@ -197,9 +199,16 @@ export function OrgPage(): ReactNode {
         if (admin) setMoved({ ids: g.ids, dx: dx / g.k, dy: dy / g.k })
       }
     }
+    // At most one board update per frame, whatever the pointer's rate.
+    const onMove = (e: PointerEvent): void => {
+      last = e
+      frame ||= requestAnimationFrame(() => ((frame = 0), last && apply(last)))
+    }
     const onUp = (e: PointerEvent): void => {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerup', onUp)
+      if (frame) cancelAnimationFrame(frame)
+      if (last) apply(last) // the final spot is not lost
       gesture.current = null
       if (g.kind === 'link') {
         const target = hover.current
