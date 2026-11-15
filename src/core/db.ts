@@ -553,7 +553,9 @@ const COLUMNS: [string, string, string][] = [
   // What a person sees of the team (PersonAccess, as JSON; empty: everything), and what an invite grants.
   ['people', 'access', 'TEXT'],
   ['invites', 'access', 'TEXT'],
-  ['agents', 'sector_does', 'TEXT']
+  ['agents', 'sector_does', 'TEXT'],
+  // The card of a WhatsApp call an agent answered (CallCard, as JSON), on the system message that shows it.
+  ['messages', 'call', 'TEXT']
 ]
 
 
@@ -565,6 +567,15 @@ function parseAccess(v: unknown): PersonAccess | undefined {
   try {
     const a = JSON.parse(v) as PersonAccess
     return a?.mode === 'picked' ? { mode: 'picked', sectors: a.sectors ?? [], agents: a.agents ?? [], channels: a.channels ?? [] } : undefined
+  } catch { return undefined }
+}
+
+// A stored call card back to its shape; anything unreadable is no card.
+function parseCall(v: unknown): Message['call'] {
+  if (typeof v !== 'string') return undefined
+  try {
+    const c = JSON.parse(v) as Message['call']
+    return c && typeof c === 'object' && typeof c.id === 'string' && typeof c.state === 'string' ? c : undefined
   } catch { return undefined }
 }
 
@@ -1083,6 +1094,7 @@ export class Db {
       run: r['run'] ? (JSON.parse(str(r['run'])) as Run) : undefined,
       routine: r['routine'] ? (JSON.parse(str(r['routine'])) as RoutineRun) : undefined,
       threadId: r['thread_id'] ? str(r['thread_id']) : undefined,
+      ...(parseCall(r['call']) ? { call: parseCall(r['call'])! } : {}),
       ...(r['thread_summary'] ? { threadSummary: JSON.parse(str(r['thread_summary'])) as ThreadSummary } : {})
     }
   }
@@ -1218,8 +1230,8 @@ export class Db {
   saveMessage(m: Message): void {
     this.db
       .prepare(
-        `INSERT INTO messages (id, conversation_id, author_kind, author_id, text, at, run, routine, thread_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET text = excluded.text, run = excluded.run`
+        `INSERT INTO messages (id, conversation_id, author_kind, author_id, text, at, run, routine, thread_id, call) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET text = excluded.text, run = excluded.run, call = excluded.call`
       )
       .run(
         m.id,
@@ -1230,7 +1242,8 @@ export class Db {
         m.at,
         m.run ? JSON.stringify(m.run) : null,
         m.routine ? JSON.stringify(m.routine) : null,
-        m.threadId ?? null
+        m.threadId ?? null,
+        m.call ? JSON.stringify(m.call) : null
       )
   }
 
