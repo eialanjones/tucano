@@ -38,7 +38,7 @@ Diga a quem pediu pra cancelar: quem fazia para, e o que ele pediu adiante. **Pa
 Falhou, parou no limite ou pausou no teto: quem pediu é avisado na hora. Passou do prazo, ou o app fechou no meio: uma vez.
 
 ## Limites
-Até 5 pedidos por resposta, 12 em aberto por agente e 3 seguidos num mesmo trabalho.
+Até 5 pedidos por resposta, 12 em aberto por agente e 4 seguidos num mesmo trabalho.
 
 ## Time de pessoas e arquivo de time
 Com mais pessoas, um pedido só chega a canais que quem pediu vê. **Exportar time** leva quem responde a quem.

@@ -118,7 +118,7 @@ export function askKind(agents: Node[], from: string, to: string): AskKind {
 }
 
 // The most requests one piece of work stacks up, each made inside the thread of the one before.
-export const MAX_CHAIN = 3
+export const MAX_CHAIN = 4
 
 // Whether `id` answering to `boss` would close a loop (or is itself, or is below itself).
 export const loops = (agents: Node[], id: string, boss: string): boolean => id === boss || reportsOf(agents, id).some((a) => a.id === boss)
