@@ -113,6 +113,7 @@ export interface State {
   routines: Routine[]
   skills: Skill[]
   wikiRev: number // goes up when a wiki page changes: the wiki screens read again
+  whatsappRev: number // goes up when a WhatsApp number changes: its screen reads again
   voiceRev: number // goes up when dictation's model changes (downloading, done, removed)
   platform: Os
   packaged: boolean
@@ -160,6 +161,7 @@ let state: State = {
   ready: false,
   threadSeen: loadSeen(),
   wikiRev: 0,
+  whatsappRev: 0,
   voiceRev: 0,
   navOpen: false,
   view: null,
@@ -600,6 +602,8 @@ function apply(e: CoreEvent): void {
         return { ...s, skills: s.skills.filter((k) => k.id !== e.id) }
       case 'wiki':
         return { ...s, wikiRev: s.wikiRev + 1 }
+      case 'whatsapp':
+        return { ...s, whatsappRev: s.whatsappRev + 1 }
       case 'voice':
         return { ...s, voiceRev: s.voiceRev + 1 }
       case 'people':
