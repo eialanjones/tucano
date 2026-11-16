@@ -51,6 +51,7 @@ export const SHAPES: Record<Method, Record<string, string>> = {
   addAccount: { engine: 's', name: 's' },
   loginAccount: { id: 's', screen: 'b?' },
   removeAccount: { id: 's' },
+  checkAccount: { id: 's', engine: '[claude,codex]' },
   installEngine: { engine: 's' },
   setupEngine: { engine: 's' },
   engineSetupState: {},

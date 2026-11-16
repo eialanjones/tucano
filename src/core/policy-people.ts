@@ -230,6 +230,7 @@ export const NEEDS: Record<Method, Need> = {
   stopLogin: 'admin',
   addAccount: 'admin',
   loginAccount: 'admin',
+  checkAccount: 'admin',
   removeAccount: 'admin',
   installEngine: 'admin',
   setupEngine: 'admin',
