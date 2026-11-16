@@ -338,8 +338,10 @@ h3 {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);
 }
+/* backwards, not both: a transform left on the page after it rises would make it the box that
+   fixed things inside it (the routine card, menus) are placed in, off from where they're measured. */
 .main > * {
-  animation: rise var(--dur-enter) var(--ease-out) both;
+  animation: rise var(--dur-enter) var(--ease-out) backwards;
 }
 
 /* ---------- motion: the few moves everything uses ---------- */
@@ -2351,6 +2353,10 @@ h3 {
 .toggle.is-on:active::after {
   transform: translateX(14px) scaleX(1.15);
 }
+.toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .key-row {
   display: flex;
   align-items: center;
@@ -3903,10 +3909,117 @@ table.csv th {
 .routine-form .row {
   gap: 8px;
 }
-.routine-days {
+/* "Num horário": repeats, days and times, one row each, and what it adds up to */
+.routine-when {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 2px 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+.routine-when__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  white-space: nowrap;
-  min-height: 38px;
+  min-height: 32px;
+}
+.routine-when__k {
+  flex: none;
+  width: 56px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.routine-when__row input[type='date'] {
+  width: auto;
+}
+.routine-when__pick {
+  width: 150px;
+}
+.routine-when__sum {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.routine-when__sum b {
+  color: var(--text);
+  font-weight: 500;
+}
+.routine-when__sum.is-bad {
+  color: var(--danger);
+}
+/* Each time is a pill (an input inside), × takes it off; + time adds the next hour */
+.time-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.time-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 4px 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  transition: var(--transition-ui);
+}
+.time-pill:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.time-pill.is-bad {
+  border-color: var(--danger);
+}
+.time-pill input[type='time'] {
+  width: auto;
+  height: 28px;
+  padding: 0 8px 0 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.time-pill input[type='time']:focus {
+  outline: none;
+  box-shadow: none;
+}
+.time-pill input[type='time']::-webkit-calendar-picker-indicator {
+  display: none;
+}
+.time-pill__x {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-3);
+}
+.time-pill__x:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.time-pills__add {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px dashed var(--border-strong, var(--border));
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.time-pills__add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .days {
   display: inline-flex;
@@ -3929,9 +4042,6 @@ table.csv th {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-text);
-}
-.routine-once {
-  margin-bottom: 8px;
 }
 
 /* ---------- folders lent to a computer ---------- */
@@ -12783,4 +12893,30 @@ button.agent-card__now:hover {
 @media (max-width: 560px) {
   .wa-call-row { padding-left: 16px; padding-right: 16px; }
   .wa-call__select { max-width: none; }
+}
+
+/* A server it's paired with, and under it whether this computer is lent to it, with how the line is doing. */
+.server-row + .server-row { border-top: 1px solid var(--border); }
+.server-lend { display: flex; align-items: flex-start; gap: 10px; margin: -2px 0 10px 30px; }
+.server-lend .toggle { flex: none; margin-top: 1px; }
+.server-lend p { margin: 2px 0 0; }
+.server-lend__state.is-ok { color: var(--ok, var(--text-2)); }
+.server-lend__state.is-bad { color: var(--danger); }
+/* What this computer lends (NodeCard): folders, apps, and what the servers ran here. */
+.node-card { display: grid; gap: 10px; }
+.node-card__apps { display: grid; gap: 8px; margin-top: 6px; }
+.node-card__apps > p { margin: 0; }
+.node-card__path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-card__twice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; padding: 10px 12px; border-radius: var(--radius); background: var(--warn-soft); font-size: 12.5px; line-height: 1.45; }
+.node-card__twice > span { flex: 1 1 260px; }
+/* What the server ran here: time, tool, what it ran, ok or error. Wraps under the time on a narrow window. */
+.node-log__head { display: flex; align-items: center; gap: 8px; }
+.node-log { display: grid; max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.node-log__row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: baseline; gap: 4px 10px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.node-log__row:last-child { border-bottom: 0; }
+.node-log__summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.node-log__error { grid-column: 1 / -1; color: var(--danger); overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .node-log__row { grid-template-columns: minmax(0, 1fr) auto; }
+  .node-log__summary { grid-column: 1 / -1; }
 }
