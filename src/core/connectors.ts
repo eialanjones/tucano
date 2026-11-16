@@ -307,8 +307,9 @@ export class ConnectorManager {
   // one refusal, and the refusal made the SDK delete the sign-in the other had just saved.
   private renewals = new Map<string, Promise<Answer>>()
   private refused = new Set<string>() // refresh tokens a server refused
-  // Connectors whose saved sign-in a server turned away even renewed, or that lacks a permission a tool needs:
-  // renewing it again gets the same answer, so the next Authorize goes to the browser. The value says why.
+  // Connectors whose saved sign-in a server turned away even renewed, that lacks a permission a tool needs, or
+  // whose call was turned away with no sign-in to renew: renewing again gets the same answer (and connecting
+  // again may go through with none), so the next Authorize goes to the browser. The value says why.
   private freshSignIn = new Map<string, string>()
 
   constructor(private deps: ConnectorDeps) {}
@@ -499,8 +500,10 @@ export class ConnectorManager {
         transport = http
         // Google's servers open and list their tools for anyone, and ask for the sign-in only on a call: without
         // a saved one the connector would look connected while every call fails with "Unauthorized". So a
-        // server that signs in with the person's app asks for the sign-in here, before connecting.
-        if (own && provider && fetchFn && (await this.needsSignIn(id, interactive))) {
+        // server that signs in with the person's app asks for the sign-in here, before connecting. Any other
+        // server does the same once a call was turned away for the sign-in: connecting again would go through
+        // with no sign-in, and Authorize would never get to the browser.
+        if (provider && fetchFn && (own ? await this.needsSignIn(id, interactive) : this.freshSignIn.has(id))) {
           if (!interactive) {
             this.setStatus(id, 'needs_auth', this.freshSignIn.get(id) ?? L('Precisa autorizar.', 'Needs authorization.'))
             return
@@ -686,7 +689,7 @@ export class ConnectorManager {
         `I couldn't renew the ${c.name} sign-in just now: the authorization server didn't answer. Try again in a moment.`
       )
     const message = signInMessage(c.name, why, google)
-    if (why !== 'missing') this.freshSignIn.set(c.id, message)
+    this.freshSignIn.set(c.id, message)
     clearTimeout(this.live.get(c.id)?.retry)
     await this.disconnect(c.id)
     this.setStatus(c.id, 'needs_auth', message)
