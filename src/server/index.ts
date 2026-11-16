@@ -25,6 +25,7 @@ import { vault } from './vault'
 import { applyRestore } from '../core/restore'
 import { verifyLocal } from '../core/local-paths'
 import { pairingLink } from '../shared/servers'
+import { CLIENT_METADATA_PATH, clientMetadataDocument } from '../shared/oauth-client'
 import { ACCESS_SHIM, INSECURE_CONTEXT_SHIM } from './web-shim'
 import { Grants, invitePage, joinFields, NO_ACCESS_PAGE, notifyNote, personNotice, Signins, Streams, UNAUTHORIZED_TEXT, Viewers, type Stream, type Who } from './people'
 import type { Person } from '../shared/types'
@@ -353,6 +354,10 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
     return void callsDoor(req, res, url).catch(() => {
       if (!res.headersSent) res.writeHead(503, BASE_HEADERS).end()
     })
+  // What a connector's authorization server reads instead of registering this Tucano (ElevenLabs'): public, as
+  // it must be, and only on https, the one address such a server accepts.
+  if (url.pathname === CLIENT_METADATA_PATH && req.method === 'GET' && publicUrl.startsWith('https://'))
+    return void res.writeHead(200, { ...BASE_HEADERS, 'content-type': 'application/json', 'cache-control': 'public, max-age=3600' }).end(JSON.stringify(clientMetadataDocument(publicUrl)))
   // A one-time code (pair-codes.ts), traded for a key of the device's own: the phone posts it here,
   // and so does the page a browser's /?code= opens (opening it spends nothing: see pair-http.ts).
   // No sign-in: the code is what counts, and a wrong one counts as a guess.
