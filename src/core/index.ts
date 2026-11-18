@@ -85,7 +85,7 @@ import { Runner } from './runs'
 import { agentFromDraft, availableModels, tucaAgent, tucaHello, tucaUpToDate } from './tuca'
 import { initializeWorkspace } from './seed'
 import { workspacePorts } from './ports'
-import { checkKey, loginsOf, quotaWindows, spentQuota } from '../shared/accounts'
+import { checkKey, hasQuota, loginsOf, quotaWindows, spentQuota } from '../shared/accounts'
 import { readQuota } from './account-check'
 import { outOfQuota } from './engines/cli'
 import { isTheme, workspaceLabel, workspaceParts } from '../shared/workspaces'
@@ -2796,7 +2796,7 @@ const api: Handlers = {
   },
   // Reads that login's windows now, whatever the last check said.
   checkAccount: ({ id, engine }) => {
-    if (!ACCOUNT_ENGINES.includes(engine)) throw new Error('Invalid engine')
+    if (!hasQuota(engine)) throw new Error('Invalid engine')
     void checkLogin(engine, id).catch(() => {}) // it runs on; the settings events tell how it goes
   },
   // Its agents go back to the harness's usual login; the folder, with the login in it, goes away.
