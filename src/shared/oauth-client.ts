@@ -22,7 +22,9 @@ export const tucanoClientMetadata = (redirectUrl: string): TucanoClientMetadata 
 
 // The document served at CLIENT_METADATA_PATH: the description, under the address it's served from.
 // Only what any sign-in page already shows: the name and where the sign-in comes back.
-export const clientMetadataDocument = (publicUrl: string): TucanoClientMetadata & { client_id: string } => ({
+// client_uri: some servers (Relay) turn away a document that doesn't say where the app lives.
+export const clientMetadataDocument = (publicUrl: string): TucanoClientMetadata & { client_id: string; client_uri: string } => ({
   client_id: `${publicUrl}${CLIENT_METADATA_PATH}`,
+  client_uri: publicUrl,
   ...tucanoClientMetadata(`${publicUrl}/oauth/callback`)
 })
