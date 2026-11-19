@@ -5888,8 +5888,20 @@ kbd {
 }
 .draft-card__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+/* a change the Tuca applied by itself: what was done, above its Desfazer */
+.proposal-receipt {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  color: var(--ok);
+}
+.proposal-undo-error {
+  flex-basis: 100%;
 }
 /* a change the Tuca proposes: each field, before → after */
 .proposal-rows {
@@ -11451,6 +11463,7 @@ button.agent-card__now:hover {
   border-color: var(--danger);
 }
 .proposal-group__dots button.is-dismissed,
+.proposal-group__dots button.is-undone,
 .proposal-group__dots button.is-replaced {
   opacity: 0.4;
 }
@@ -13050,6 +13063,11 @@ button.agent-card__now:hover {
 .server-lend p { margin: 2px 0 0; }
 .server-lend__state.is-ok { color: var(--ok, var(--text-2)); }
 .server-lend__state.is-bad { color: var(--danger); }
+/* Lent: what's left, right under the switch (a folder; the agents, on the server). */
+.server-lend__next { display: grid; gap: 6px; margin-top: 8px; }
+.server-lend__step { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.server-lend__step > .grow { min-width: 0; overflow-wrap: anywhere; }
+.server-lend__step .btn { flex: none; }
 /* What this computer lends (NodeCard): folders, apps, and what the servers ran here. */
 .node-card { display: grid; gap: 10px; }
 .node-card__apps { display: grid; gap: 8px; margin-top: 6px; }
@@ -15807,6 +15825,67 @@ button.agent-card__now:hover {
 .computer-body > .computer:first-child {
   margin-top: 0;
 }
+/* On a server: the person's lent computer, a block of its own under the choice (its own row divider). */
+.your-computer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.your-computer .computer {
+  margin-top: 0;
+}
+/* A lent computer's agents, each on or off (the Computer card, Connectors and the connector's window). */
+.computer-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.computer-agents__list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.computer-agents__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  min-width: 0;
+}
+.computer-agents__row + .computer-agents__row {
+  border-top: 1px solid var(--border);
+}
+.computer-agents__row .grow {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Connectors, on a server: the viewer's lent computers above the rest. */
+.my-computers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+.my-computers__one {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.my-computers__one + .my-computers__one {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.my-computers .computer {
+  margin-top: 0;
+}
 
 /* The agent's save state at the tabs' right end, once its head scrolled away. */
 .tabs__aside {
@@ -15823,4 +15902,26 @@ button.agent-card__now:hover {
   .lrow--field .lrow__key {
     width: 84px;
   }
+}
+
+/* The logins saved for an agent's browser, in its browser card. */
+.saved-logins {
+  display: grid;
+  gap: 8px;
+}
+.saved-logins__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.saved-logins__site {
+  overflow-wrap: anywhere;
+}
+.saved-logins__form {
+  display: grid;
+  gap: 6px;
+}
+.saved-logins .hint {
+  margin: 0;
 }
