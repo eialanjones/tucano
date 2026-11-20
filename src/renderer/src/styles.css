@@ -6327,7 +6327,8 @@ kbd {
   margin-bottom: 10px;
 }
 .read-group h2 > .usage-refresh {
-  align-self: center;
+  align-self: flex-end;
+  margin-bottom: -2px;
   justify-content: center;
   width: 22px;
   height: 22px;
