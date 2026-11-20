@@ -7,6 +7,7 @@ import type { AccountEngine } from '../../../shared/types'
 import type { EngineId } from '../store'
 import { amAdmin, checkAccount, useStore } from '../store'
 import { Ring, windowLabel } from './Usage'
+import { Icon } from './ui'
 
 // More than one login: the usual one is then listed in AccountsQuota, not in its own section.
 export const useManyLogins = (engine: EngineId): boolean => useStore((s) => loginsOf(s.settings, engine).length > 1)
@@ -37,6 +38,26 @@ function NoData({ id, engine, state }: { id: string; engine: EngineId; state?: '
         </button>
       )}
     </p>
+  )
+}
+
+// What the app knows of a login is what its last reply said, so a limit that was reset early shows only when
+// that login replies again. This reads every login of the harness now, one after the other.
+function RefreshAll({ engine, logins }: { engine: EngineId; logins: Login[] }): ReactNode {
+  const admin = useStore(amAdmin)
+  const checks = useStore((s) => s.settings.accountChecks)
+  const [sending, setSending] = useState(false)
+  if (!admin) return null
+  const busy = sending || logins.some((l) => checks?.[checkKey(engine, l.id)]?.state === 'checking')
+  const run = (): void => {
+    setSending(true)
+    Promise.all(logins.map((l) => checkAccount(l.id, engine as AccountEngine).catch(() => {}))).finally(() => setSending(false))
+  }
+  const label = busy ? L('Atualizando o uso das contas…', 'Refreshing the accounts…') : L('Atualizar o uso das contas agora', 'Refresh the accounts now')
+  return (
+    <button type="button" className="usage-refresh" title={label} aria-label={label} disabled={busy} onClick={run}>
+      {busy ? <span className="spinner" /> : <Icon name="refresh" size={14} />}
+    </button>
   )
 }
 
@@ -104,13 +125,17 @@ export function AccountsQuota({ engine }: { engine: EngineId }): ReactNode {
     <section className="read-group">
       <h2 className="usage-accounts-head">
         {claude ? L('Contas do Claude', 'Claude accounts') : L('Contas do Codex', 'Codex accounts')}
+        <RefreshAll engine={engine} logins={logins} />
         <span>{balancing ? L('equilibrando entre as contas', 'balancing between the accounts') : L('cada agente na conta dele', 'each agent on its own account')}</span>
         {balancing && <Pace logins={logins} now={now} total={logins.length} />}
       </h2>
       <div className="usage-accounts">
         {logins.map((l) => {
           const out = leftOf(l, now) <= 0
-          const check = settings.accountChecks?.[checkKey(engine, l.id)]?.state
+          const checked = settings.accountChecks?.[checkKey(engine, l.id)]
+          const check = checked?.state
+          // A failed read newer than what is shown: the numbers below are from before it.
+          const stale = check === 'failed' && !!l.windows?.length && checked!.at > (l.at ?? 0)
           const at = l.at ? new Date(l.at).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) : ''
           return (
             <div key={l.id} className="usage-account" data-login={l.id || 'usual'}>
@@ -122,6 +147,7 @@ export function AccountsQuota({ engine }: { engine: EngineId }): ReactNode {
                   next === l.id && <span className="usage-account__chip is-next">{L('Próxima a ser usada', 'Next in line')}</span>
                 )}
                 {balancing && !l.windows?.length && !check && <span className="usage-account__chip">{L('Aguardando o teste', 'Waiting for its check')}</span>}
+                {stale && <span className="usage-account__chip">{L('Não deu pra atualizar', "Couldn't refresh")}</span>}
                 {at && <span className="muted small">{L(`às ${at}`, `at ${at}`)}</span>}
               </div>
               {l.windows?.length ? (

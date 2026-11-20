@@ -137,7 +137,8 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   thread: <path d="M4 5h16v11H10l-4 4v-4H4V5ZM8 9h8M8 12h5" />,
-  ask: <path d="M4 5h16v11H10l-4 4v-4H4V5ZM10 8.6a2 2 0 0 1 3.9.6c0 1.4-1.9 1.7-1.9 3M12 14.2h.01" />
+  ask: <path d="M4 5h16v11H10l-4 4v-4H4V5ZM10 8.6a2 2 0 0 1 3.9.6c0 1.4-1.9 1.7-1.9 3M12 14.2h.01" />,
+  refresh: <path d="M20 11a8 8 0 0 0-14.4-4.2L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.4 4.2l1.6-1.7M20 20v-4.5h-4.5" />
 }
 
 export type IconName = keyof typeof PATHS
