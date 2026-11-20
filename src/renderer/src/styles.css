@@ -6326,6 +6326,22 @@ kbd {
   align-items: flex-end;
   margin-bottom: 10px;
 }
+.read-group h2 > .usage-refresh {
+  align-self: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: -4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: var(--transition-ui);
+}
+.read-group h2 > .usage-refresh:hover:not(:disabled) {
+  background: var(--hover);
+}
+.read-group h2 > .usage-refresh:disabled {
+  cursor: default;
+}
 .read-group h2 > .usage-pace {
   margin-left: auto;
   display: inline-flex;
