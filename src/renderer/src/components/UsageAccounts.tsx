@@ -144,7 +144,7 @@ export function AccountsQuota({ engine }: { engine: EngineId }): ReactNode {
                 {out ? (
                   <span className="usage-account__chip is-out">{L('Acabou por agora', 'Used up for now')}</span>
                 ) : (
-                  next === l.id && <span className="usage-account__chip is-next">{L('Próxima a ser usada', 'Next in line')}</span>
+                  next === l.id && <span className="usage-account__chip is-next" title={L('É a que mais tem pra gastar antes do limite renovar.', 'The one with the most to spend before its limit renews.')}>{L('Próxima a ser usada', 'Next in line')}</span>
                 )}
                 {balancing && !l.windows?.length && !check && <span className="usage-account__chip">{L('Aguardando o teste', 'Waiting for its check')}</span>}
                 {stale && <span className="usage-account__chip">{L('Não deu pra atualizar', "Couldn't refresh")}</span>}

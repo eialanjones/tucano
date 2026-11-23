@@ -595,7 +595,7 @@ export interface Settings {
   seenVersion?: string // the last version whose news I closed; an update past it shows what's new once
   accounts?: Account[] // more logins of Claude Code or Codex, beside the one each already has
   // How a harness's logins are used: 'order' (unset) keeps each agent on its own and moves on when it
-  // runs out; 'balance' gives each reply to the one with the most left (see shared/accounts.ts).
+  // runs out; 'balance' gives each reply to the one with the most to spend before its reset (see shared/accounts.ts).
   accountUse?: AccountUse
   accountQuota?: Record<string, Quota | CodexQuota> // by account id: the account's windows, from its last reply or the last check
   // Computed, by checkKey (the account's id, or "usual:<engine>"): a check of its windows that is running, or the last one that failed.

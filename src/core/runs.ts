@@ -1265,7 +1265,7 @@ export class Runner {
 
     // Another login of this harness (Settings › Accounts), when the agent has one.
     let account = agent.accountId ? settings.accounts?.find((a) => a.id === agent.accountId && a.engine === engineId) : undefined
-    // Balancing: the signed-in login with the most left, not the agent's own (its own wins a tie).
+    // Balancing: the signed-in login with the most to spend before its reset, not the agent's own (its own wins a tie).
     const balancing = settings.accountUse === 'balance'
     if (balancing) {
       const logins = loginsOf(settings, engineId)

@@ -98,7 +98,7 @@ import { agentFromDraft, availableModels, tucaAgent, tucaHello, tucaUpToDate } f
 import { accessCard, agentStamp, appliesNow, changedSince, routineStamp, splitChange, UNDO_MS, undoErrors } from './tuca-apply'
 import { initializeWorkspace } from './seed'
 import { workspacePorts } from './ports'
-import { checkKey, hasQuota, loginsOf, quotaWindows, spentQuota } from '../shared/accounts'
+import { checkKey, hasQuota, loginsOf, quotaWindows, spentQuota, STALE_MS } from '../shared/accounts'
 import { readQuota } from './account-check'
 import { outOfQuota } from './engines/cli'
 import { isTheme, workspaceLabel, workspaceParts } from '../shared/workspaces'
@@ -457,7 +457,8 @@ function checkLogin(engine: 'claude' | 'codex', id: string): Promise<void> {
   return run
 }
 // Automatic checks (not `force`) only run when the agents may run (not paused, out of quiet hours). Each
-// login without windows is checked at most every 10 minutes, and one whose check failed waits 6 hours.
+// login without windows, or whose reading is older than STALE_MS, is checked at most every 10 minutes,
+// and one whose check failed waits 6 hours.
 // The usual login of a harness is checked only on a ChatGPT or Claude plan: an API key reports no windows.
 // `force` ignores all of that. Only for a harness with more than one login, unless forced.
 function checkLogins(force = false): void {
@@ -471,7 +472,8 @@ function checkLogins(force = false): void {
       if (!force && l.id === '' && s.engines[engine]?.route !== 'plan') continue
       const key = checkKey(engine, l.id)
       const since = Date.now() - (lastCheck.get(key) ?? 0)
-      if (!force && (l.windows?.length || since < 10 * 60_000 || (accountChecks.get(key)?.state === 'failed' && since < 6 * 60 * 60_000))) continue
+      const fresh = (l.windows?.length ?? 0) > 0 && l.at !== undefined && Date.now() - l.at < STALE_MS
+      if (!force && (fresh || since < 10 * 60_000 || (accountChecks.get(key)?.state === 'failed' && since < 6 * 60 * 60_000))) continue
       void checkLogin(engine, l.id).catch(() => {})
     }
   }
@@ -1463,6 +1465,8 @@ void enginesReady.then(() => {
   if (settings().onboarding?.done) ensureTuca()
   if (settings().accountUse === 'balance') checkLogins()
 })
+// While balancing, readings are kept fresh: every 10 minutes, the ones older than STALE_MS are read again.
+setInterval(() => { if (settings().accountUse === 'balance') checkLogins() }, 10 * 60_000).unref()
 
 if (defaultWorkspace) telegram = new Telegram({
   secrets,

@@ -593,7 +593,7 @@ export function AccountsCard(): ReactNode {
           </div>
           <span className="hint">
             {use === 'balance'
-              ? L('Cada resposta vai pra conta com mais sobrando, pra nenhuma acabar antes das outras.', 'Each reply goes to the account with the most left, so none runs out before the others.')
+              ? L('Cada resposta vai pra conta com mais pra gastar antes da semana recomeçar, pra nada sobrar à toa.', 'Each reply goes to the account with the most to spend before its week renews, so nothing is left unused.')
               : L('Se a conta do agente acabar, entra o Modelo reserva dele.', "If the agent's account runs out, its Reserve model takes over.")}
           </span>
           {!admin && <span className="hint">{L('Só quem administra muda isto.', 'Only an admin changes this.')}</span>}
@@ -680,7 +680,7 @@ export function AccountPicker({ draft, patch }: { draft: Agent; patch: (p: Parti
         ]}
         placeholder={usualLabel}
       />
-      {balancing && <span className="hint">{L('As contas estão em "Equilibrar entre as contas": o Tucano escolhe a que tem mais sobrando a cada resposta. Esta é a preferida quando estão iguais.', 'Accounts are set to "Balance between the accounts": Tucano picks the one with the most left for each reply. This one is preferred when they are even.')}</span>}
+      {balancing && <span className="hint">{L('As contas estão em "Equilibrar entre as contas": o Tucano escolhe a que tem mais pra gastar antes da semana recomeçar. Esta é a preferida quando estão iguais.', 'Accounts are set to "Balance between the accounts": Tucano picks the one with the most to spend before its week renews. This one is preferred when they are even.')}</span>}
       {chosen && !chosen.loggedIn && <span className="hint hint--warn">{L('Essa conta ainda não entrou: o agente não responde até você entrar nela em Configurações › Modelos.', 'This account isn’t signed in yet: the agent won’t reply until you sign in under Settings › Models.')}</span>}
     </label>
   )
