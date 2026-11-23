@@ -1,9 +1,10 @@
 // Which login of a harness a reply runs on, and how much each has left.
 // A harness has its usual login and the accounts added in Settings. In 'order' each agent stays on
-// its own and moves on only when it runs out. In 'balance' a reply goes to the login with the most
-// left of its subscription, so no account runs dry while another sits idle.
+// its own and moves on only when it runs out. In 'balance' a reply goes to the login with the most to
+// spend before its budget (its longest window, the week on Claude) resets, so what is left at the reset
+// isn't lost; the short windows only gate a login that is too close to its limit to be moved to.
 // A session lives in its login's folder: changing login sends the whole conversation again. So the
-// login in use is kept until another has clearly more left, or it is nearly out.
+// login in use is kept until another is clearly more urgent, or it is nearly out.
 import type { Account, CodexQuota, EngineId, Quota, Settings } from './types'
 
 export interface QuotaWindow {
@@ -23,7 +24,12 @@ export interface Login {
 export const USUAL_LOGIN = ''
 // The key of a login's check in settings.accountChecks: the usual logins of two harnesses share the id ''.
 export const checkKey = (engine: EngineId, id: string): string => id || `usual:${engine}`
-export const SWITCH_GAP = 0.15 // how much more another login must have left to take over
+export const SWITCH_GAP = 0.15 // no longer used by the pick; only kept for the old tests
+export const ENTER_MIN = 0.2 // a login is only switched to when each of its short windows has this much left
+export const SWITCH_RATIO = 1.5 // how many times more urgent another login must be to take over from the one in use
+export const SWITCH_MIN = 0.15 // a login takes over from the one in use only with this much of its budget left: less isn't worth sending the conversation again
+export const STALE_MS = 6 * 60 * 60_000 // a reading older than this is read again while balancing
+export const URGENCY_MAX = 100
 export const NEARLY_OUT = 0.05 // with this little left, the login in use is given up
 export const SPENT_MS = 30 * 60_000 // how long a login that hit its limit sits out, when no window was near its end
 export const NEARLY_FULL = 0.9 // a window this used is the one a limit error is about
@@ -90,8 +96,32 @@ export function loginsOf(settings: Pick<Settings, 'engines' | 'accounts' | 'quot
   ]
 }
 
-// The login a reply should run on, balancing. `current`: the one this agent used last, kept unless
-// another has SWITCH_GAP more left or it is nearly out. `prefer`: the agent's own, which wins a tie.
+// A login's budget: its longest window (the week on Claude). The others are short ones that only limit the speed.
+export const budgetOf = (login: Pick<Login, 'windows'>): QuotaWindow | undefined =>
+  login.windows?.length ? login.windows.reduce((a, b) => (b.minutes > a.minutes ? b : a)) : undefined
+
+// How fast the budget must be spent for none of it to be left at the reset: what is left over the share of
+// the window still ahead. 1 is on pace, above 1 a surplus that would be lost, below 1 already spent ahead.
+export function urgencyOf(login: Pick<Login, 'windows'>, now: number): number {
+  const budget = budgetOf(login)
+  if (!budget) return 0
+  const left = 1 - usedOf(budget, now)
+  const ahead = budget.resetsAt <= now ? 1 : Math.min(1, (budget.resetsAt - now) / (budget.minutes * 60_000))
+  return Math.min(URGENCY_MAX, Math.max(0, left / Math.max(ahead, 1 / URGENCY_MAX)))
+}
+
+// How much the tightest short window (any but the budget) has left, 0..1; 1 when there is none.
+export function shortLeftOf(login: Pick<Login, 'windows'>, now: number): number {
+  const budget = budgetOf(login)
+  const shorts = (login.windows ?? []).filter((w) => w !== budget)
+  return shorts.length ? Math.min(...shorts.map((w) => 1 - usedOf(w, now))) : 1
+}
+
+// The login a reply should run on, balancing. It goes to the one with the most to spend before its budget
+// resets (urgencyOf), among those not too close to a limit (ENTER_MIN left in each short window, more than
+// NEARLY_OUT in the budget). `current`: the one this agent used last, kept unless another is SWITCH_RATIO
+// times more urgent or it is nearly out. `prefer`: the agent's own, which wins a tie.
+// A login takes over from the one in use only with SWITCH_MIN of its budget left.
 // `skip`: the ones that already failed in this reply. Undefined when none is left to try.
 // Only a login whose windows are known is weighed: one that never reported waits for its check. It is
 // used when every known one is out, and a spent one only when there is nothing else.
@@ -103,9 +133,21 @@ export function pickLogin(logins: Login[], opts: { now: number; current?: string
   if (!open.length) return undefined
   const left = (l: Login): number => leftOf(l, opts.now)
   const rank = (l: Login): number => (l.id === opts.prefer ? 0 : l.id === opts.current ? 1 : 2)
-  const best = open.reduce((a, b) => (left(b) > left(a) || (left(b) === left(a) && rank(b) < rank(a)) ? b : a))
-  const current = open.find((l) => l.id === opts.current)
-  if (current && left(current) > NEARLY_OUT && left(best) - left(current) < SWITCH_GAP) return current
+  if (!live.length) return open.reduce((a, b) => (left(b) > left(a) || (left(b) === left(a) && rank(b) < rank(a)) ? b : a))
+  const current = live.find((l) => l.id === opts.current)
+  const keep = !!current && left(current) > NEARLY_OUT
+  const budgetLeft = (l: Login): number => 1 - usedOf(budgetOf(l)!, opts.now)
+  const candidates = live.filter((l) => (keep && l === current) || (shortLeftOf(l, opts.now) >= ENTER_MIN && budgetLeft(l) > NEARLY_OUT))
+  // None can be entered: the one with the most left, as when nothing is known of the resets.
+  if (!candidates.length) return live.reduce((a, b) => (left(b) > left(a) || (left(b) === left(a) && rank(b) < rank(a)) ? b : a))
+  // Against the one in use, only a login with enough left to be worth the switch is weighed.
+  const pool = keep ? candidates.filter((l) => l === current || budgetLeft(l) >= SWITCH_MIN) : candidates
+  const urgency = (l: Login): number => urgencyOf(l, opts.now)
+  const best = pool.reduce((a, b) => {
+    if (Math.abs(urgency(b) - urgency(a)) > 1e-9) return urgency(b) > urgency(a) ? b : a
+    return rank(b) < rank(a) || (rank(b) === rank(a) && left(b) > left(a)) ? b : a
+  })
+  if (keep && current && best !== current && (urgency(current) > 0 ? urgency(best) < urgency(current) * SWITCH_RATIO : urgency(best) <= 0)) return current
   return best
 }
 
