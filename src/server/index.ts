@@ -16,8 +16,9 @@ import type { Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { serveArtifact } from './artifact-http'
 import { Forwarder, isPrivate } from './forward'
-import { ARTIFACT_CSP, BASE_HEADERS, body, clientIp, decodedPath, Doors, doorOf, PAGE_HEADERS, PERSON_KEY, sameOrigin, signIn } from './guard'
+import { ARTIFACT_CSP, attachment, BASE_HEADERS, body, clientIp, decodedPath, Doors, doorOf, PAGE_HEADERS, PERSON_KEY, sameOrigin, signIn } from './guard'
 import { codeMinutes, PairCodes } from './pair-codes'
 import { htmlPage, pairLinkPage, pairPost, type PairDoor } from './pair-http'
 import { NodeLinkHttp } from './node-link-http'
@@ -136,7 +137,7 @@ function fromCore(msg: CoreRequest): void {
     return
   }
   if (msg.type === 'auth-result') return waits.get(id ?? '')?.(msg.person ?? (msg.removed ? { removed: true } : undefined))
-  if (msg.type === 'join-result' || msg.type === 'invite-info-result' || msg.type === 'device-key-result' || msg.type === 'whatsapp-webhook-result' || msg.type === 'calls-start-result' || msg.type === 'calls-tool-result') return waits.get(id ?? '')?.((msg as unknown as { data: unknown }).data)
+  if (msg.type === 'join-result' || msg.type === 'invite-info-result' || msg.type === 'device-key-result' || msg.type === 'mcp-result' || msg.type === 'whatsapp-webhook-result' || msg.type === 'calls-start-result' || msg.type === 'calls-tool-result') return waits.get(id ?? '')?.((msg as unknown as { data: unknown }).data)
   if (msg.type === 'doc-file-result') return waits.get(id ?? '')?.((msg as unknown as { data: unknown }).data)
   if (msg.type === 'access-result') return waits.get(id ?? '')?.((msg as unknown as { ok: boolean }).ok)
   // Removed, or their role changed: what the server remembered of them goes (see personNotice).
@@ -307,6 +308,22 @@ async function callsDoor(req: IncomingMessage, res: ServerResponse, url: URL): P
   send(out.status, typeof out.body === 'string' ? out.body : '')
 }
 
+// One MCP request, answered by the core's door (the desktop's is the same door, on 127.0.0.1). A wait for an
+// agent's answer is at most 45 s (mcp.ts), well inside this timeout and a proxy's.
+const MCP_MAX_BODY = 256 * 1024
+function mcpRequest(req: IncomingMessage, res: ServerResponse): void {
+  body(req, MCP_MAX_BODY)
+    .then((text) => ask<{ status: number; headers: Record<string, string>; body: string }>({ type: 'mcp', method: req.method ?? 'GET', auth: req.headers.authorization ?? '', body: text }, 70_000))
+    .then(
+      (out) => {
+        if (res.headersSent) return
+        if (!out) return void res.writeHead(503, { ...BASE_HEADERS, 'retry-after': '5' }).end()
+        res.writeHead(out.status, { ...BASE_HEADERS, ...out.headers }).end(out.body)
+      },
+      () => !res.headersSent && res.writeHead(413, BASE_HEADERS).end()
+    )
+}
+
 function oauthCallback(url: URL, res: ServerResponse): void {
   const id = randomUUID()
   const answer = (r: { ok: boolean; why?: string }): void => {
@@ -357,6 +374,9 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
     return void whatsappWebhook(req, res, url).catch(() => {
       if (!res.headersSent) res.writeHead(503, BASE_HEADERS).end()
     })
+  // A harness's MCP (src/core/mcp.ts): its own key in the Authorization header, checked by the core.
+  // No cookie and no page: whoever calls is a program, never a browser signed in here.
+  if (url.pathname === '/mcp' || url.pathname === '/mcp/') return mcpRequest(req, res)
   if (url.pathname === '/calls/start' || /^\/calls\/tool\/[a-z_]{1,40}$/.test(url.pathname))
     return void callsDoor(req, res, url).catch(() => {
       if (!res.headersSent) res.writeHead(503, BASE_HEADERS).end()
@@ -623,22 +643,14 @@ function signedIn(req: IncomingMessage, res: ServerResponse, url: URL, who: Who)
       'content-type': saving ? 'application/octet-stream' : (TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream'),
       'content-length': String(size),
       'content-security-policy': 'sandbox',
-      ...(saving ? { 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(basename(path))}` } : {})
+      ...(saving ? { 'content-disposition': attachment(basename(path)) } : {})
     })
     return void createReadStream(path).on('error', () => res.destroy()).pipe(res)
   }
 
-  // What the agents showed in the chat, sandboxed as on the desktop.
-  const art = /^\/artifact\/([0-9a-f-]{36})\/([^/]+)$/.exec(url.pathname)
-  if (art) {
-    const dir = join(dataDir, 'artifacts', art[1]!)
-    const name = decodedPath(art[2]!)
-    const path = name === undefined ? '' : normalize(join(dir, name))
-    if (!path.startsWith(dir + sep)) return void res.writeHead(404, BASE_HEADERS).end()
-    // Only who sees the conversation it was shown in (someone else's DM: not found).
-    void grants.may(who.person ?? ownerId, { artifact: art[1]! }).then((ok) => (ok ? file(res, path, { 'content-security-policy': ARTIFACT_CSP }) : res.writeHead(404, BASE_HEADERS).end()))
-    return
-  }
+  // What the agents showed in the chat, sandboxed as on the desktop, or saved (?download).
+  // Only who sees the conversation it was shown in (someone else's DM: not found).
+  if (serveArtifact(res, url, { dataDir, may: (id) => grants.may(who.person ?? ownerId, { artifact: id }), type: (path) => TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream' })) return
 
   // A document (Documentos): the core says where its file is when this person may see it (`v`: an older version).
   // A refusal and a missing file answer the same, so nothing says a document is there.
@@ -846,7 +858,12 @@ const WEB = `${INSECURE_CONTEXT_SHIM}(() => {
     checkUpdates: () => { if (desktop && desktop.checkUpdates) desktop.checkUpdates() },
     installUpdate: () => { if (desktop && desktop.installUpdate) desktop.installUpdate() },
     // In the desktop app: this computer's Tucano, on Settings › Servers, to lend it here.
-    openLending: desktop && desktop.openLending ? () => desktop.openLending() : undefined
+    openLending: desktop && desktop.openLending ? () => desktop.openLending() : undefined,
+    // In the desktop app: its workspaces and servers, in this page's own workspace menu (the app's bar
+    // over the page goes away while the menu draws them). An older app has none of it: the bar stays.
+    places: desktop && desktop.places
+      ? { list: () => desktop.places(), onChanged: (cb) => desktop.onPlaces(cb), go: (p) => desktop.go(p), own: (on) => desktop.own(on), os: desktop.os }
+      : undefined
   }
 })()
 `

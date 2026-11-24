@@ -758,7 +758,7 @@ function Details({
           <input type="checkbox" checked={!!agent.entry} disabled={!admin} onChange={(e) => onEntry(e.target.checked)} />
           <span>
             <b>{L('Porta de entrada', 'Entry point')}</b>
-            <small>{L('Você fala com ele, e ele passa cada parte ao setor certo. Os times abaixo dele são os setores.', 'You talk to it, and it passes each part to the right sector. The teams below it are the sectors.')}</small>
+            <small>{L('Você fala com ele, e ele passa cada parte ao setor certo. Os times abaixo dele são os setores.', 'Talk to the entry point to send work to the right sector. The teams below it are sectors.')}</small>
           </span>
         </label>
       )}
