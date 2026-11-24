@@ -91,7 +91,27 @@ export const CANCELAR_PEDIDO: ToolDef = {
   }
 }
 
-export const DELEGATION_TOOLS = [PEDIR, RESPONDER_PEDIDO, CANCELAR_PEDIDO]
+export const ORIENTAR_PEDIDO: ToolDef = {
+  name: 'orientar_pedido',
+  get description() {
+    return L(
+      'Dá uma orientação a quem está trabalhando num pedido seu em aberto, no meio do trabalho, sem parar o que está sendo feito. A orientação é lida no próximo passo. Use para corrigir o rumo ou somar um detalhe que muda o que está sendo feito agora. Mais trabalho ou uma parte nova vai com pedir e "continuar"; para parar, use cancelar_pedido. Só funciona enquanto o pedido está sendo trabalhado, naquele momento.',
+      'Gives a direction to whoever is working on an open request of yours, while they work, without stopping what they are doing. They read it at their next step. Use it to correct course or add a detail that changes what they are doing now. More work or a new part goes with pedir and "continuar"; to stop, use cancelar_pedido. It only works while they are working on it at that moment.'
+    )
+  },
+  get inputSchema() {
+    return {
+      type: 'object' as const,
+      properties: {
+        id: { type: 'string', description: L('O código do pedido, entre colchetes na lista.', "The request's code, in brackets in the list.") },
+        orientacao: { type: 'string', maxLength: 2000, description: L('A orientação, inteira: quem faz não lê esta conversa.', 'The direction, whole: they do not read this conversation.') }
+      },
+      required: ['id', 'orientacao']
+    }
+  }
+}
+
+export const DELEGATION_TOOLS = [PEDIR, RESPONDER_PEDIDO, CANCELAR_PEDIDO, ORIENTAR_PEDIDO]
 export const DELEGATION_TOOL_NAMES = new Set(DELEGATION_TOOLS.map((t) => t.name))
 
 // The code an agent names a request by: short enough to copy, long enough to tell its own apart.
@@ -272,7 +292,7 @@ export function teamSection(opts: { agent: Agent; agents: Agent[]; conversations
   }
   const asked = open.filter((d) => d.from === agent.id)
   const going = asked.length
-    ? `\n\n${L('Pedidos seus em aberto (o que completa um destes vai com pedir e "continuar" com o código, não num pedido novo)', 'Your open requests (what adds to one of these goes with pedir and "continuar" set to its code, not in a new request)')}:\n${asked
+    ? `\n\n${L('Pedidos seus em aberto (o que completa um destes vai com pedir e "continuar" com o código, não num pedido novo; uma correção de rumo para um que está sendo feito agora vai com orientar_pedido)', 'Your open requests (what adds to one of these goes with pedir and "continuar" set to its code, not in a new request; a course correction for one being worked on right now goes with orientar_pedido)')}:\n${asked
         .map((d) => `- [${codeOf(d)}] ${name(d.to)}, ${channel(d.conversationId)}, ${L('desde', 'since')} ${clock(d.createdAt)}${d.dueAt ? `, ${L('prazo', 'by')} ${clock(d.dueAt)}` : ''}${d.asking ? `, ${L('esperando uma resposta sua', 'waiting for an answer from you')}` : ''}: ${d.text.replace(/\s+/g, ' ').slice(0, 140)}`)
         .join('\n')}`
     : ''

@@ -178,6 +178,9 @@ export function fakeEngine(id: Engine['id'], opts: { delayMs?: number; reply?: (
       } else if (turn.mcpUrl && /cancele o pedido/i.test(last)) {
         const code = [...turn.prompt.matchAll(/\[([0-9a-f]{8})\]/g)].at(-1)?.[1] ?? ''
         reply = textOf(await callTool(turn.mcpUrl, 'cancelar_pedido', { id: code, motivo: 'mudou o plano' }))
+      } else if (turn.mcpUrl && /^(?:oriente|steer) [0-9a-f]{8}: .+/i.test(last)) {
+        const [, code, text] = /^(?:oriente|steer) ([0-9a-f]{8}): (.+)/i.exec(last)!
+        reply = textOf(await callTool(turn.mcpUrl, 'orientar_pedido', { id: code!, orientacao: text! }))
       } else if (/pe[çc]a pr[oa] (\w+)/i.test(last)) {
         reply = `@${/pe[çc]a pr[oa] (\w+)/i.exec(last)![1]!.toLowerCase()}, pode ajudar aqui?`
       } else if (/agrade[çc]a (?:a|ao|à) (\w+)/i.test(last)) {

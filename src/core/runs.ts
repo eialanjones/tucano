@@ -54,7 +54,7 @@ import { awaitDone, idleSleepSeconds, isStatusTool, pendingOf, pollTool } from '
 import { callError, contentText, errorReason } from './connectors'
 import { commandStep, execSummary, keyArg, maskSecrets, resultSummary } from './step-text'
 import { during, inReplyTool, traceReply, tracing, type ReplyText, type ReplyTrace, type SpanRef } from './telemetry'
-import { askMessage, askTask, byCode, wantsDm, inPlace, placeOf, CANCELAR_PEDIDO, channelNamed, codeOf, DELEGATION_TOOL_NAMES, DELEGATION_TOOLS, MAX_DELEGATIONS_PER_REPLY, MAX_OPEN_DELEGATIONS, parseAsk, PEDIR, RESPONDER_PEDIDO, returnTask, teamMember, teammateNote, teamSection, type AskContext, type Returned } from './delegations'
+import { askMessage, askTask, byCode, wantsDm, inPlace, placeOf, CANCELAR_PEDIDO, ORIENTAR_PEDIDO, channelNamed, codeOf, DELEGATION_TOOL_NAMES, DELEGATION_TOOLS, MAX_DELEGATIONS_PER_REPLY, MAX_OPEN_DELEGATIONS, parseAsk, PEDIR, RESPONDER_PEDIDO, returnTask, teamMember, teammateNote, teamSection, type AskContext, type Returned } from './delegations'
 import { anyoneOf, askKind, channelsOf, entriesOf, headsOf, MAX_CHAIN, sectorName, sectorOf } from '../shared/org'
 import type { Delegation, DelegationRef } from '../shared/types'
 import type { Requester } from '../shared/doc-access'
@@ -456,7 +456,8 @@ type ReplyOpts = { askedIn?: string; depth: number; job?: string; autoContinued?
 // reads it with its next tool result, and the reply's own chain carries it, in their words, from the
 // moment it's given. It is not a message of theirs: nothing of it is posted, so a reply that ends
 // before taking one leaves it in its chain, marked as not read (see `steerLeftovers`).
-type SteerNote = { id: string; who: string; text: string }
+// `agent`: the note came from the agent that asked for this work (`orientar_pedido`), not from a person.
+type SteerNote = { id: string; who: string; text: string; agent?: true }
 // A reply waiting for its agent to finish there. Only a send the person marked as queued waits, and
 // what goes on with a reply the person is already reading (an approval's outcome, a question's
 // refusal, a browser hand-back): a message of theirs, a routine, a retry and a reply going on past
@@ -899,13 +900,17 @@ export class Runner {
   // messages, each its own session), so a steer from a reply's own pill must reach that reply alone.
   // It goes into that reply's chain right here, where the person gave it, so what they steered is
   // part of what the reply is doing — not a prompt, and not a message of theirs.
+  // `by`: the agent whose reply must take it (a direction from the agent that asked, for the one doing the work).
+  // `request`: the request (Delegation id) that reply must be working on (`run.handed`), so a direction never lands on other work of the same agent in that thread.
   // `threadId`: where the person wrote it. Only a reply in that same place takes it: what is written in
   // the channel isn't meant for a reply working inside a thread, nor the other way round.
-  private steerIn(conversationId: string, threadId: string | undefined, note: Omit<SteerNote, 'id'>, only?: string): boolean {
+  private steerIn(conversationId: string, threadId: string | undefined, note: Omit<SteerNote, 'id'>, only?: string, by?: string, request?: string): boolean {
     let taken = false
     for (const c of this.controllers.values()) {
       if (c.msg.conversationId !== conversationId || c.reason || (c.msg.threadId ?? undefined) !== (threadId ?? undefined)) continue
       if (only && c.msg.id !== only) continue
+      if (by && !(c.msg.author.kind === 'agent' && c.msg.author.id === by)) continue
+      if (request && c.msg.run?.handed !== request) continue
       const id = randomUUID()
       ;(c.steer ??= []).push({ ...note, id })
       c.flush?.() // the words streamed so far go first: this full message carries them too
@@ -915,7 +920,7 @@ export class Runner {
       steps.splice(last?.status === 'running' && last.kind !== 'steer' ? steps.length - 1 : steps.length, 0, {
         id,
         kind: 'steer',
-        label: L('Orientação', 'Steer'), // their words are the row's content; who gave it is obvious here
+        label: note.agent ? L(`Orientação de ${note.who}`, `Steer from ${note.who}`) : L('Orientação', 'Steer'), // their words are the row's content; a person is obvious here, an agent is named
         input: note.text,
         status: 'running'
       })
@@ -1782,6 +1787,7 @@ export class Runner {
     const handed = this.handedIn(msg)
     const boss = handed ? db.agent(handed.from) : undefined
     const delegated: DelegationRef[] = []
+    let steered = 0 // directions this reply sent with orientar_pedido
     let handedOn = 0 // requests handed on in this reply that weren't asked before on the job: the work moving on
     let answeredUp = false // answered a question its team left on a request: nothing in that for the person
     let computers = this.deps.gateway && agent.computer ? this.deps.computers : undefined
@@ -2180,6 +2186,12 @@ ${note}`,
           )
         }
 
+        // Shared by pedir and orientar_pedido. A request never ends up more visible than where it was asked: from a DM, with other people in
+        // the workspace, it stays in a DM, unless the person named the channel (#engenharia) themselves.
+        const said = msg.run?.replyTo ? db.message(msg.run.replyTo)?.text ?? '' : ''
+        const saidChannel = (c: Conversation): boolean => said.toLowerCase().split(/[^\p{L}\p{N}#_-]+/u).includes(`#${(c.name ?? '').toLowerCase()}`)
+        const fromDm = conv.kind === 'dm' && db.people().length > 1
+
         if (name === PEDIR.name && team.length) {
           const ask = parseAsk(args)
           if ('error' in ask) return textResult(ask.error, true)
@@ -2204,11 +2216,6 @@ ${note}`,
           if (before?.state !== 'open' && db.openDelegations().filter((d) => d.from === agent.id).length >= MAX_OPEN_DELEGATIONS) return textResult(L(`Você já tem ${MAX_OPEN_DELEGATIONS} pedidos em aberto, o máximo. Espere algum voltar, ou cancele um com cancelar_pedido.`, `You already have ${MAX_OPEN_DELEGATIONS} open requests, the most allowed. Wait for one to come back, or cancel one with cancelar_pedido.`), true)
           let d: Delegation
           let channel: Conversation
-          // A request never ends up more visible than where it was asked: from a DM, with other people in
-          // the workspace, it stays in a DM, unless the person named the channel (#engenharia) themselves.
-          const said = msg.run?.replyTo ? db.message(msg.run.replyTo)?.text ?? '' : ''
-          const saidChannel = (c: Conversation): boolean => said.toLowerCase().split(/[^\p{L}\p{N}#_-]+/u).includes(`#${(c.name ?? '').toLowerCase()}`)
-          const fromDm = conv.kind === 'dm' && db.people().length > 1
           if (before) {
             const there = db.conversation(before.conversationId)
             if (!there || !db.message(before.rootId) || !sees.canSeeConversation(requester, there)) return textResult(L(`A thread do pedido [${codeOf(before)}] não existe mais. Peça de novo, sem "continuar".`, `Request [${codeOf(before)}]'s thread is gone. Ask again, without "continuar".`), true)
@@ -2273,7 +2280,7 @@ ${note}`,
           )
         }
 
-        if ((name === RESPONDER_PEDIDO.name || name === CANCELAR_PEDIDO.name) && team.length) {
+        if ((name === RESPONDER_PEDIDO.name || name === CANCELAR_PEDIDO.name || name === ORIENTAR_PEDIDO.name) && team.length) {
           const mine = db.openDelegations().filter((d) => d.from === agent.id)
           const d = byCode(mine, args['id'])
           const codes = mine.map((x) => `[${codeOf(x)}]`).join(', ')
@@ -2283,6 +2290,22 @@ ${note}`,
             this.cancelDelegation(d, agent, typeof args['motivo'] === 'string' ? args['motivo'].trim() : '')
             addSteps({ id: randomUUID(), label: L('Cancelou o pedido', 'Cancelled the request'), detail: `${who} · ${snip(d.text, 100)}`, status: 'done' })
             return textResult(L(`Pedido [${codeOf(d)}] cancelado: ${who} parou.`, `Request [${codeOf(d)}] cancelled: ${who} stopped.`))
+          }
+          if (name === ORIENTAR_PEDIDO.name) {
+            const text = (typeof args['orientacao'] === 'string' ? args['orientacao'].trim() : '').slice(0, 2000)
+            if (!text) return textResult(L('Diga a orientação em "orientacao".', 'Say the direction in "orientacao".'), true)
+            const code = codeOf(d)
+            if (steered >= 3) return textResult(L('Você já mandou 3 orientações nesta resposta, o máximo. Espere o pedido voltar.', "You've already sent 3 directions in this reply, the most allowed. Wait for the request to come back."), true)
+            // The same privacy rule as a follow-up with "continuar": steering never carries what was said here further than the person reaches.
+            const there = db.conversation(d.conversationId)
+            if (!there || !sees.canSeeConversation(requester, there)) return textResult(L(`A conversa do pedido [${codeOf(d)}] não existe mais. Se isto ainda vale, peça de novo.`, `Request [${codeOf(d)}]'s conversation is gone. If this still holds, ask again.`), true)
+            if (fromDm && there.kind !== 'dm' && !saidChannel(there)) return textResult(L(`O pedido [${codeOf(d)}] está em ${placeOf(there)}, e esta conversa é uma DM: orientar levaria o que foi dito aqui pra lá. Só oriente se ${settings.workspaceName} escrever o nome do canal.`, `Request [${codeOf(d)}] is in ${placeOf(there)}, and this conversation is a DM: steering would take what was said here there. Steer only if ${settings.workspaceName} writes the channel's name.`), true)
+            if (d.asking) return textResult(L(`O pedido [${code}] está esperando a resposta de uma pergunta. Responda com responder_pedido e ponha nela também a orientação.`, `Request [${code}] is waiting for the answer to a question. Answer with responder_pedido and put the direction in it too.`), true)
+            if (!this.steerIn(d.conversationId, workThread(d), { who: agent.name, text, agent: true }, undefined, d.to, d.id))
+              return textResult(L(`${who} não está trabalhando no pedido [${code}] neste momento, então não há o que orientar. Se isto ainda vale, mande com pedir e "continuar": "${code}".`, `${who} is not working on request [${code}] right now, so there is nothing to steer. If this still holds, send it with pedir and "continuar": "${code}".`), true)
+            steered++
+            addSteps({ id: randomUUID(), label: L(`Orientou ${who}`, `Steered ${who}`), detail: snip(text, 120), status: 'done' })
+            return textResult(L(`Orientação entregue a ${who}, que lê no próximo passo do pedido [${code}], se ainda houver um, e segue. O resultado volta pra você como antes.`, `Direction delivered to ${who}: it is read at the next step of request [${code}], if there is one, and followed. The result comes back to you as before.`))
           }
           const answer = typeof args['resposta'] === 'string' ? args['resposta'].trim() : ''
           if (!answer) return textResult(L('Diga a resposta em "resposta".', 'Say the answer in "resposta".'), true)
@@ -3299,7 +3322,12 @@ ${note}`,
             const handed = control.steer?.splice(0) ?? []
             if (!handed.length) return r
             const said = handed.map(
-              (n) => `${L(`${n.who} escreveu isto enquanto você trabalhava:`, `${n.who} wrote this while you were working:`)}\n\n${n.text}`
+              (n) =>
+                `${
+                  n.agent
+                    ? L(`${n.who}, que te fez este pedido, mandou esta orientação enquanto você trabalhava. Vale como parte do pedido: siga-a, mesmo onde muda o rumo do que foi pedido antes. Suas aprovações e seus limites continuam os seus:`, `${n.who}, who made you this request, sent this direction while you were working. It counts as part of the request: follow it, even where it changes the course of what was asked before. Your own approvals and limits still apply:`)
+                    : L(`${n.who} escreveu isto enquanto você trabalhava:`, `${n.who} wrote this while you were working:`)
+                }\n\n${n.text}`
             )
             // The row the person's steer already has in this chain turns done here: this is the call it
             // was handed over with, so what they steered is part of what this reply did.
