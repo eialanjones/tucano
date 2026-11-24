@@ -899,14 +899,16 @@ export class Runner {
   // It goes into that reply's chain right here, where the person gave it, so what they steered is
   // part of what the reply is doing — not a prompt, and not a message of theirs.
   // `by`: the agent whose reply must take it (a direction from the agent that asked, for the one doing the work).
+  // `request`: the request (Delegation id) that reply must be working on (`run.handed`), so a direction never lands on other work of the same agent in that thread.
   // `threadId`: where the person wrote it. Only a reply in that same place takes it: what is written in
   // the channel isn't meant for a reply working inside a thread, nor the other way round.
-  private steerIn(conversationId: string, threadId: string | undefined, note: Omit<SteerNote, 'id'>, only?: string, by?: string): boolean {
+  private steerIn(conversationId: string, threadId: string | undefined, note: Omit<SteerNote, 'id'>, only?: string, by?: string, request?: string): boolean {
     let taken = false
     for (const c of this.controllers.values()) {
       if (c.msg.conversationId !== conversationId || c.reason || (c.msg.threadId ?? undefined) !== (threadId ?? undefined)) continue
       if (only && c.msg.id !== only) continue
       if (by && !(c.msg.author.kind === 'agent' && c.msg.author.id === by)) continue
+      if (request && c.msg.run?.handed !== request) continue
       const id = randomUUID()
       ;(c.steer ??= []).push({ ...note, id })
       c.flush?.() // the words streamed so far go first: this full message carries them too
@@ -1774,6 +1776,7 @@ export class Runner {
     const handed = this.handedIn(msg)
     const boss = handed ? db.agent(handed.from) : undefined
     const delegated: DelegationRef[] = []
+    let steered = 0 // directions this reply sent with orientar_pedido
     let handedOn = 0 // requests handed on in this reply that weren't asked before on the job: the work moving on
     let answeredUp = false // answered a question its team left on a request: nothing in that for the person
     let computers = this.deps.gateway && agent.computer ? this.deps.computers : undefined
@@ -2276,15 +2279,18 @@ ${note}`,
           if (name === ORIENTAR_PEDIDO.name) {
             const text = (typeof args['orientacao'] === 'string' ? args['orientacao'].trim() : '').slice(0, 2000)
             if (!text) return textResult(L('Diga a orientação em "orientacao".', 'Say the direction in "orientacao".'), true)
+            const code = codeOf(d)
+            if (steered >= 3) return textResult(L('Você já mandou 3 orientações nesta resposta, o máximo. Espere o pedido voltar.', "You've already sent 3 directions in this reply, the most allowed. Wait for the request to come back."), true)
             // The same privacy rule as a follow-up with "continuar": steering never carries what was said here further than the person reaches.
             const there = db.conversation(d.conversationId)
             if (!there || !sees.canSeeConversation(requester, there)) return textResult(L(`A conversa do pedido [${codeOf(d)}] não existe mais. Se isto ainda vale, peça de novo.`, `Request [${codeOf(d)}]'s conversation is gone. If this still holds, ask again.`), true)
             if (fromDm && there.kind !== 'dm' && !saidChannel(there)) return textResult(L(`O pedido [${codeOf(d)}] está em ${placeOf(there)}, e esta conversa é uma DM: orientar levaria o que foi dito aqui pra lá. Só oriente se ${settings.workspaceName} escrever o nome do canal.`, `Request [${codeOf(d)}] is in ${placeOf(there)}, and this conversation is a DM: steering would take what was said here there. Steer only if ${settings.workspaceName} writes the channel's name.`), true)
-            const code = codeOf(d)
-            if (!this.steerIn(d.conversationId, workThread(d), { who: agent.name, text, agent: true }, undefined, d.to))
+            if (d.asking) return textResult(L(`O pedido [${code}] está esperando a resposta de uma pergunta. Responda com responder_pedido e ponha nela também a orientação.`, `Request [${code}] is waiting for the answer to a question. Answer with responder_pedido and put the direction in it too.`), true)
+            if (!this.steerIn(d.conversationId, workThread(d), { who: agent.name, text, agent: true }, undefined, d.to, d.id))
               return textResult(L(`${who} não está trabalhando no pedido [${code}] neste momento, então não há o que orientar. Se isto ainda vale, mande com pedir e "continuar": "${code}".`, `${who} is not working on request [${code}] right now, so there is nothing to steer. If this still holds, send it with pedir and "continuar": "${code}".`), true)
+            steered++
             addSteps({ id: randomUUID(), label: L(`Orientou ${who}`, `Steered ${who}`), detail: snip(text, 120), status: 'done' })
-            return textResult(L(`Orientação entregue a ${who}, que lê no próximo passo do pedido [${code}] e segue. O resultado volta pra você como antes.`, `Direction delivered to ${who}: they read it at the next step of request [${code}] and follow it. The result comes back to you as before.`))
+            return textResult(L(`Orientação entregue a ${who}, que lê no próximo passo do pedido [${code}], se ainda houver um, e segue. O resultado volta pra você como antes.`, `Direction delivered to ${who}: it is read at the next step of request [${code}], if there is one, and followed. The result comes back to you as before.`))
           }
           const answer = typeof args['resposta'] === 'string' ? args['resposta'].trim() : ''
           if (!answer) return textResult(L('Diga a resposta em "resposta".', 'Say the answer in "resposta".'), true)
@@ -3228,7 +3234,7 @@ ${note}`,
               (n) =>
                 `${
                   n.agent
-                    ? L(`${n.who}, que te fez este pedido, mandou esta orientação enquanto você trabalhava. Vale como parte do pedido: siga-a, mesmo onde muda o rumo do que foi pedido antes:`, `${n.who}, who made you this request, sent this direction while you were working. It counts as part of the request: follow it, even where it changes the course of what was asked before:`)
+                    ? L(`${n.who}, que te fez este pedido, mandou esta orientação enquanto você trabalhava. Vale como parte do pedido: siga-a, mesmo onde muda o rumo do que foi pedido antes. Suas aprovações e seus limites continuam os seus:`, `${n.who}, who made you this request, sent this direction while you were working. It counts as part of the request: follow it, even where it changes the course of what was asked before. Your own approvals and limits still apply:`)
                     : L(`${n.who} escreveu isto enquanto você trabalhava:`, `${n.who} wrote this while you were working:`)
                 }\n\n${n.text}`
             )

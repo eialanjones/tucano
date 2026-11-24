@@ -21,7 +21,7 @@ Clicar num agente mostra canais, time e pedidos; **Agora** lista os abertos.
 4. Quando tudo voltou, ele te responde uma vez, na thread da sua mensagem (**Ver a resposta**). Um pedido parado numa aprovação sua não segura os outros.
 5. Pra continuar o assunto, responda nessa thread: o pedido segue onde estava.
 
-Escreva na thread de um pedido: quem faz te responde ali, e isso entra no resultado. O agente que pediu também pode orientar o colega no meio do trabalho: ele lê no próximo passo.
+Escreva na thread de um pedido: quem faz te responde ali, e isso entra no resultado. O agente que pediu também pode orientar quem está fazendo, no meio do trabalho: a orientação é lida no próximo passo.
 
 Vai pra um canal de quem faz só quando o assunto é claramente o **Tema** dele. Com mais pessoas, um pedido feito numa DM fica numa DM, a não ser que você escreva o canal (**#engenharia**).
 
