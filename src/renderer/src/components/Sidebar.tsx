@@ -7,6 +7,7 @@ import {
   agentById,
   archiveAgent,
   isWorking,
+  workingOn,
   messagesIn,
   openTuca,
   isTeam,
@@ -705,12 +706,12 @@ function LiveDot({ working }: { working: boolean }): ReactNode {
   return <span className={`pulse ${done ? 'is-done' : ''}`} title={working ? L('Trabalhando', 'Working') : undefined} />
 }
 
-// The same on an agent's row, as three dots: the agent is writing in its DM.
-function WorkingDots({ working }: { working: boolean }): ReactNode {
+// The same on an agent's row, as three dots: the agent is at work somewhere. `where`: the place, when it isn't its DM.
+function WorkingDots({ working, where }: { working: boolean; where?: string }): ReactNode {
   const done = useJustEnded(working, 1500)
   if (!working && !done) return null
   return (
-    <span className={`working-dots ${done ? 'is-done' : ''}`} title={working ? L('Trabalhando', 'Working') : undefined}>
+    <span className={`working-dots ${done ? 'is-done' : ''}`} title={working ? (where ? L(`Trabalhando em ${where}`, `Working in ${where}`) : L('Trabalhando', 'Working')) : undefined}>
       <i />
       <i />
       <i />
@@ -732,7 +733,16 @@ function RoleMeta({ role, owner }: { role: string; owner?: string }): ReactNode 
 const AgentRow = memo(function AgentRow({ id, dm, unread, owner }: { id: string; dm?: string; unread?: number; owner?: string }): ReactNode {
   const agent = useStore((s) => agentById(s, id))
   const active = useStore((s) => (s.view?.kind === 'conversation' && !!dm && s.view.id === dm) || (s.view?.kind === 'agent' && s.view.id === id))
-  const working = useStore((s) => !!dm && isWorking(s, dm))
+  // Where it is at work, anywhere I can see: '' its DM, a channel's name, undefined when it isn't working.
+  // A reply in a channel or a thread lights the row too, so the list never looks idle while an agent works.
+  const at = useStore((s) => {
+    if (dm && isWorking(s, dm)) return ''
+    const m = workingOn(s).get(id)
+    if (!m) return undefined
+    const c = s.conversations.find((x) => x.id === m.conversationId)
+    return c?.kind === 'channel' ? `#${c.name}` : L('outra conversa', 'another conversation')
+  })
+  const working = at !== undefined
   const waiting = useWaitingTitle(dm)
   const waits = useStore((s) => (dm ? waitingCount(s, dm) : 0))
   if (!agent) return null
@@ -746,7 +756,7 @@ const AgentRow = memo(function AgentRow({ id, dm, unread, owner }: { id: string;
         <span className="nav-item__label">{agent.name}</span>
         <RoleMeta role={agent.role} owner={owner} />
         {pct !== undefined && pct >= 0.8 && <span className={`dot ${pct >= 1 ? 'dot--danger' : 'dot--warn'}`} title={pct >= 1 ? L('Bateu o limite do mês', 'Hit the monthly limit') : L('Já usou mais de 80% do limite', 'Over 80% of the limit used')} />}
-        {waits > 0 ? <WaitingPill count={waits} title={waiting} /> : <WorkingDots working={working} />}
+        {waits > 0 ? <WaitingPill count={waits} title={waiting} /> : <WorkingDots working={working} where={at || undefined} />}
         {unread ? (
           <span key={unread} className="badge badge--soft">
             {unread}
