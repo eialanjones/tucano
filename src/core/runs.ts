@@ -23,7 +23,7 @@ import type { Docs } from './docs'
 import { DOCS_TOOL_NAMES, DOCS_TOOLS, docsCall } from './docs-tools'
 import { BUSCAR_NA_WEB, formatResults, LER_PAGINA, readPage, searchWeb, WEB_TOOLS, type WebResult } from './web-tools'
 import { AGENDAR, CANCELAR, outcome, ROUTINE_TOOL_NAMES, whenText, type Routines } from './routines'
-import { CONCLUIR_TAREFA, concludeTask, routineTaskLine, SUGERIR_TAREFA, suggestTask, TASK_TOOL_NAMES } from './task-tools'
+import { CONCLUIR_TAREFA, concludeTask, routineTaskLine, CRIAR_TAREFA, createTask, SUGERIR_TAREFA, suggestTask, TASK_TOOL_NAMES } from './task-tools'
 import { noNewsPhrase, noNewsRun } from '../shared/routine-news'
 import { LER_SKILL, PROPOR_SKILL, SKILL_TOOL_NAMES, type Skills } from './skills'
 import { availableModels, builderGuide, builderSection, draftFrom, helperSection, PROPOR_AGENTE, PROPOR_TIME, teamFrom } from './tuca'
@@ -1777,6 +1777,7 @@ export class Runner {
     const routines = this.deps.gateway ? this.deps.routines : undefined
     // Board tasks: a team agent leaves suggestions for the person; a routine that works on a task can end it.
     const suggests = !!routines && isTeam(agent)
+    const creates = suggests && agent.createsTasks === true
     const workedTask = routineOf?.taskId ? db.task(routineOf.taskId) : undefined
     const concludes = !!routines && !!routineOf && workedTask?.routineId === routineOf.id
     const skills = this.deps.gateway ? this.deps.skills : undefined
@@ -2034,6 +2035,7 @@ ${note}`,
       ...(whatsapp?.has(agent.id) ? whatsapp.tools(agent.id) : []),
       ...(routines ? [AGENDAR, CANCELAR] : []),
       ...(suggests ? [SUGERIR_TAREFA] : []),
+      ...(creates ? [CRIAR_TAREFA] : []),
       ...(concludes ? [CONCLUIR_TAREFA] : []),
       ...(skills ? [...(mySkills.length ? [LER_SKILL] : []), PROPOR_SKILL] : []),
       ...(wiki ? WIKI_TOOLS : []),
@@ -2624,11 +2626,17 @@ ${note}`,
         }
 
         // Only the task tools this turn was offered: each is offered under its own condition (see the tool list above).
-        if (routines && ((name === SUGERIR_TAREFA.name && suggests) || (name === CONCLUIR_TAREFA.name && concludes))) {
+        if (routines && ((name === SUGERIR_TAREFA.name && suggests) || (name === CRIAR_TAREFA.name && creates) || (name === CONCLUIR_TAREFA.name && concludes))) {
+          const fresh = db.agent(agent.id) ?? agent
+          if (name === CRIAR_TAREFA.name && fresh.createsTasks !== true) return textResult(L('Criar tarefas direto no quadro foi desligado pra você. Use sugerir_tarefa.', 'Creating tasks straight on the board was turned off for you. Use sugerir_tarefa.'), true)
+          const team = (): Agent[] => agentsFor(requester, db.agents()).filter(isTeam)
           const r = name === SUGERIR_TAREFA.name
-            ? suggestTask(db, emit, db.agent(agent.id) ?? agent, requester, args, agentsFor(requester, db.agents()).filter(isTeam), routineOf)
-            : concludeTask(db, emit, routines, routineOf && db.routine(routineOf.id), args)
-          if (r.task) addSteps({ id: randomUUID(), label: name === SUGERIR_TAREFA.name ? L('Sugeriu tarefa', 'Suggested a task') : L('Concluiu tarefa', 'Finished a task'), detail: r.task.title, status: 'done' })
+            ? suggestTask(db, emit, fresh, requester, args, team(), routineOf)
+            : name === CRIAR_TAREFA.name
+              ? createTask(db, emit, fresh, requester, args, team(), routineOf)
+              : concludeTask(db, emit, routines, routineOf && db.routine(routineOf.id), args)
+          const label = name === SUGERIR_TAREFA.name ? L('Sugeriu tarefa', 'Suggested a task') : name === CRIAR_TAREFA.name ? L('Criou tarefa', 'Created a task') : L('Concluiu tarefa', 'Finished a task')
+          if (r.task) addSteps({ id: randomUUID(), label, detail: r.task.title, status: 'done' })
           return textResult(r.reply, r.error)
         }
 
@@ -3332,6 +3340,7 @@ ${note}`,
       web: agent.web !== false,
       routines: routines?.forAgent(agent.id).filter((r) => visible(r.conversationId)),
       suggests,
+      creates,
       skills: skills && mySkills,
       wiki: wiki ? { pages: wiki.count(), kinds: wiki.kinds() } : undefined,
       docs: docs?.foldersFor(agent, docsRequester, 'read').map((f) => ({ path: f.path, rule: f.rule })),
