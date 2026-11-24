@@ -2282,6 +2282,7 @@ const api: Handlers = {
     if (typeof clean.outsideGuard !== 'boolean') delete clean.outsideGuard
     if (clean.proactive !== false) delete clean.proactive // on unless turned off
     if (clean.oneAtATime !== true) delete clean.oneAtATime // as many at once unless turned on
+    if (clean.createsTasks !== true) delete clean.createsTasks // it only suggests tasks unless turned on
     // Whom it answers to (src/shared/org.ts): another agent that isn't itself, below it, archived or the Tuca. Anything else: no one.
     // One that already answered to the same agent keeps doing so: only a change is checked.
     if (!clean.reportsTo || clean.kind === 'tuca' || (db.agent(clean.id)?.reportsTo !== clean.reportsTo && !possibleBosses(db.agents(), clean.id).some((a) => a.id === clean.reportsTo))) delete clean.reportsTo
@@ -2562,7 +2563,7 @@ const api: Handlers = {
     // What marks a task as someone's suggestion or a routine's is never set from here: it comes from the stored one.
     const finishing = state.state === 'done' && prev?.state !== 'done'
     const routineId = finishing ? undefined : prev?.routineId
-    const saved: Task = { id: prev?.id ?? randomUUID(), owner: ctx.person.id, title, position, createdAt: prev?.createdAt ?? now, ...(notes ? { notes } : {}), ...(agentId ? { agentId } : {}), ...(conversationId ? { conversationId } : {}), ...(dueAt ? { dueAt } : {}), ...state, ...(prev?.suggestedBy ? { suggestedBy: prev.suggestedBy } : {}), ...(prev?.fromRoutine ? { fromRoutine: prev.fromRoutine } : {}), ...(routineId ? { routineId } : {}) }
+    const saved: Task = { id: prev?.id ?? randomUUID(), owner: ctx.person.id, title, position, createdAt: prev?.createdAt ?? now, ...(notes ? { notes } : {}), ...(agentId ? { agentId } : {}), ...(conversationId ? { conversationId } : {}), ...(dueAt ? { dueAt } : {}), ...state, ...(prev?.suggestedBy ? { suggestedBy: prev.suggestedBy } : {}), ...(prev?.fromRoutine ? { fromRoutine: prev.fromRoutine } : {}), ...(prev?.createdBy ? { createdBy: prev.createdBy } : {}), ...(routineId ? { routineId } : {}) }
     db.saveTask(saved)
     if (finishing) {
       if (prev?.routineId) routines.remove(prev.routineId) // after the save above, which no longer points at it

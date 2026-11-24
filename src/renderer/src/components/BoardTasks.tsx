@@ -252,6 +252,7 @@ export function TaskPanel({ t, team, conversations, routine, run, now, onClose, 
         <div className="bd-form">
           <input className="title-in" value={title} maxLength={MAX_TASK_TITLE} onChange={(e) => setTitle(e.target.value)} onBlur={() => void words()} aria-label={L('Título', 'Title')} />
           {kind === 'repeated' && <RunLine run={run} routine={routine} />}
+          {t.createdBy && <div className="bd-made">{L(`Criada por ${team.find((x) => x.id === t.createdBy)?.name ?? 'um agente'}`, `Created by ${team.find((x) => x.id === t.createdBy)?.name ?? 'an agent'}`)}{t.fromRoutine ? L(` · rotina “${t.fromRoutine}”`, ` · routine “${t.fromRoutine}”`) : ''}</div>}
           <label>
             {mine ? L('Anotações', 'Notes') : L('Detalhes pro agente', 'Details for the agent')}
             <textarea value={notes} maxLength={MAX_TASK_NOTES} onChange={(e) => setNotes(e.target.value)} onBlur={() => void words()} placeholder={mine ? L('O que você quer lembrar sobre isso.', 'What you want to remember about it.') : L('O que ele precisa saber: contexto, o que conta como pronto, onde estão as coisas.', 'What it needs to know: context, what counts as done, where things are.')} />

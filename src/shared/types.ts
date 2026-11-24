@@ -104,6 +104,7 @@ export interface Agent {
   entry?: boolean // the person chose it as an entry point (src/shared/org.ts entriesOf): it answers to no agent, is in no sector, and the teams below it are sectors
   proactive?: boolean // false: the router never calls it in on its own when something is its to do (src/core/router.ts chimeIn); on unless false
   oneAtATime?: true // its replies go one at a time, wherever they are: the next waits for the one running (src/core/runs.ts, enqueue)
+  createsTasks?: true // puts tasks straight on its person's board (criar_tarefa) instead of only suggesting them; off unless true
 }
 
 // One of the person's apps given to an agent, by the name the system shows.
@@ -268,12 +269,14 @@ export interface Task {
   doneAt?: number
   result?: string // what the agent said when it marked it done (`concluir_tarefa`)
   suggestedBy?: string // the agent that suggested it (`sugerir_tarefa`); it isn't on the list until its owner accepts it
-  fromRoutine?: string // the name of the routine whose run suggested it
+  fromRoutine?: string // the name of the routine whose run suggested or created it
   routineId?: string // the routine that works on it until it's done
+  createdBy?: string // the agent that put it straight on the list (criar_tarefa)
 }
 export type TaskInput = Pick<Task, 'title'> & Partial<Pick<Task, 'id' | 'notes' | 'agentId' | 'conversationId' | 'dueAt' | 'position' | 'state'>>
 export const MAX_TASK_RESULT = 600
 export const MAX_AGENT_SUGGESTIONS = 5 // how many suggestions of one agent may wait on one person
+export const MAX_AGENT_TASKS = 20 // how many open tasks one agent may have put on one person's list
 export const MAX_TASK_TITLE = 300
 export const MAX_TASK_NOTES = 8_000
 

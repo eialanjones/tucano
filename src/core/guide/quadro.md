@@ -20,6 +20,8 @@ Em quem faz, escolha **Eu mesmo faço**. Ela vai pra **Fazendo** no seu nome, e 
 ## O que um agente sugere
 Um agente que percebe um trabalho que ninguém pediu não começa sozinho: ele sugere. A sugestão aparece acima das colunas, com quem sugeriu. **Aceitar** põe em **A fazer**; **Dispensar** apaga. Cada agente pode ter até 5 sugestões esperando por você.
 
+Um agente com **Cria tarefas direto no Quadro** ligado (na página do agente) põe a tarefa direto em **A fazer**, marcada como **Criada por …**, com até 20 abertas por agente. Quem começa é você.
+
 ## Repetir até ficar pronto
 Numa tarefa que já tem agente, use **Repetir até ficar pronto**: escolha **Todo dia** ou **Seg a sex**, a hora, e **Ligar rotina**. O agente trabalha nela nesse horário e a tarefa fica em **Fazendo**, mostrando como foi a última vez e quando roda de novo. Quando o agente termina, ou você usa **Concluir**, a tarefa vai pra **Feito** e a rotina some. **Parar de repetir** devolve a tarefa pra **A fazer**.
 
