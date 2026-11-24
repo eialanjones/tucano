@@ -19,7 +19,7 @@ Em **Pastas do seu computador**, **Emprestar pasta…** dá ao agente a pasta de
 Pra publicar no GitHub (criar uma branch, mandar arquivos, abrir uma PR), o agente usa o **conector do GitHub** (em **Conectores**) com **Ler e escrever**, com as permissões e aprovações de qualquer conector. No **Linux isolado** não há credenciais: `git push` não funciona nele. Em **Este computador**, `git push` roda com as credenciais do git que você já tem. Se um agente disser que "a sessão é só leitura", confira se ele tem **Ler e escrever** no GitHub e se **Subir commits (push)** ou **Abrir pull request** não estão em **Nunca**.
 
 ## O navegador do agente
-Na aba **Ferramentas**, **Navegador**: um Chrome só dele, com logins separados dos seus. Ele abre páginas, clica, preenche e lê como uma pessoa. Um clique que compra, publica, envia ou apaga pede sua aprovação.
+Na aba **Ferramentas**, **Navegador**: um Chrome só dele, com logins separados dos seus. Ele abre páginas, clica, preenche, lê e envia arquivos como uma pessoa. Um clique que compra, publica, envia ou apaga pede sua aprovação.
 - Você acompanha no painel **Navegador de …**. Pra entrar numa conta, resolver um código ou captcha: **Assumir**, faça o que precisa e **Devolver**.
 - **Abrir o navegador dele** abre a janela pra você entrar nas contas antes.
 - **Logins do Cofre**: os logins de sites liberados pra ele no Cofre. Ele entra sozinho só no endereço exato, sem ver a senha. Código por email: lê no conector de email, se houver; senão, pergunta.

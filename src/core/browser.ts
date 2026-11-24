@@ -18,6 +18,7 @@ import type { Db } from './db'
 import { downloaded, downloadsFolder, downloadsSince, listDownloads, pendingDownloads } from './downloads'
 import { textResult, type ToolDef } from './gateway'
 import { jevBox, jevElement } from './jev'
+import { ENVIAR, enviarTool, uploadFiles, uploadPaths } from './browser-upload'
 
 export const NAVEGADOR = 'navegador' // the "connector" of browser click approvals
 export const CLICAR = 'navegador_clicar'
@@ -60,6 +61,7 @@ export const browserTools = (): ToolDef[] => {
         required: ['alvo']
       }
     },
+    enviarTool(alvo),
     {
       name: 'navegador_digitar',
       description: L(
@@ -140,7 +142,7 @@ export const browserTools = (): ToolDef[] => {
   ]
 }
 
-export const BROWSER_TOOL_NAMES = new Set(['navegador_abrir', CLICAR, 'navegador_digitar', 'navegador_tecla', 'navegador_rolar', 'navegador_voltar', 'navegador_ler', 'navegador_ver', 'navegador_esperar', BAIXADOS, ANEXAR, LOGIN])
+export const BROWSER_TOOL_NAMES = new Set(['navegador_abrir', CLICAR, 'navegador_digitar', 'navegador_tecla', 'navegador_rolar', 'navegador_voltar', 'navegador_ler', 'navegador_ver', 'navegador_esperar', ENVIAR, BAIXADOS, ANEXAR, LOGIN])
 
 // ---------- pure helpers (tested on their own) ----------
 
@@ -237,6 +239,7 @@ const sameUrl = (a: string, b: string): boolean => a.split('#')[0] === b.split('
 const labels = (): Record<string, string> => ({
   navegador_abrir: L('Abriu', 'Opened'),
   [CLICAR]: L('Clicou', 'Clicked'),
+  [ENVIAR]: L('Enviou arquivo', 'Uploaded a file'),
   navegador_digitar: L('Escreveu', 'Typed'),
   navegador_tecla: L('Apertou', 'Pressed'),
   navegador_rolar: L('Rolou', 'Scrolled'),
@@ -253,6 +256,7 @@ const labels = (): Record<string, string> => ({
 const doing = (): Record<string, string> => ({
   navegador_abrir: L('Abrindo', 'Opening'),
   [CLICAR]: L('Clicando em', 'Clicking'),
+  [ENVIAR]: L('Enviando arquivo em', 'Uploading a file to'),
   navegador_digitar: L('Escrevendo em', 'Typing in'),
   navegador_tecla: L('Apertando', 'Pressing'),
   navegador_rolar: L('Rolando', 'Scrolling'),
@@ -281,7 +285,9 @@ export function browserStep(name: string, args: Record<string, unknown>): { labe
             ? `${s('segundos')} s`
             : name === ANEXAR
               ? s('arquivo')
-              : name === BAIXADOS || name === LOGIN
+              : name === ENVIAR
+                ? `${s('arquivo')} → ${s('alvo')}`
+                : name === BAIXADOS || name === LOGIN
                 ? ''
                 : s('alvo')
   return { label: labels()[name] ?? name, detail: detail.length > 140 ? `${detail.slice(0, 140)}…` : detail }
@@ -310,6 +316,8 @@ export interface BrowserDeps {
     loginSites(agentId: string, personId?: string): string[]
     loginFor(agentId: string, origin: string, use: { conversationId?: string; messageId?: string; personId?: string }): Promise<{ username: string; password: string } | undefined>
   }
+  // Copies files of the agent's computer to the host for a page's file input (Computers.copyOut).
+  files?: (agent: Agent, paths: string[], dir: string) => Promise<{ paths: string[] } | { error: string }>
   downloadWaitMs?: number // how long an action waits for a download under way to finish (tests shorten it)
 }
 
@@ -320,7 +328,7 @@ const LOG = 14
 const LIVE_MS = 20_000 // frames stream at full speed while it works, and a little after
 const DOWNLOAD_WAIT_MS = 20_000 // a bill a click started: most are whole in a second or two
 // What an action may start a download with.
-const ACTS = new Set(['navegador_abrir', CLICAR, 'navegador_digitar', 'navegador_tecla', 'navegador_voltar', 'navegador_esperar', LOGIN])
+const ACTS = new Set(['navegador_abrir', CLICAR, ENVIAR, 'navegador_digitar', 'navegador_tecla', 'navegador_voltar', 'navegador_esperar', LOGIN])
 
 const kb = (bytes: number): string => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`)
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -546,7 +554,26 @@ export class Browser {
             return this.ask(id, ctx, page, args, callArgs, L(`Clicar em "${named}"`, `Click "${named}"`), L(`Esse clique ("${named}") precisa de aprovação.`, `This click ("${named}") needs approval.`))
           }
           const r = await this.deps.host(id, 'click', 'el' in spot ? { ref: spot.ref } : { x: spot.x, y: spot.y })
-          return { result: await this.after(id, r, { ...step, detail: label || target }), detail: label || target }
+          const done = await this.after(id, r, { ...step, detail: label || target })
+          const tip = L('O site tentou abrir a janela de escolher arquivo. Para enviar, chame navegador_enviar_arquivo sem alvo.', 'The site tried to open the choose-file window. To send the file, call navegador_enviar_arquivo without a target.')
+          return { result: r.chooser ? { ...done, content: [{ type: 'text', text: tip }, ...done.content] } : done, detail: label || target }
+        }
+        case ENVIAR: {
+          const target = String(args['alvo'] ?? '').trim()
+          const wanted = uploadPaths(String(args['arquivo'] ?? ''))
+          if ('error' in wanted) return { result: textResult(wanted.error, true) }
+          let ref: number | undefined // none: the file window a click just tried to open (chrome.ts keeps it)
+          if (target) {
+            const page = await this.page(id, !!this.deps.jev?.on())
+            const spot = await this.locate(target, page)
+            if ('error' in spot) return { result: textResult(spot.error, true) }
+            if (!('el' in spot)) return { result: textResult(L('Achei o lugar só pela imagem. Use o número do campo ou do botão (navegador_ler lista).', 'I found the spot only in the image. Use the number of the field or button (navegador_ler lists them).'), true) }
+            ref = spot.ref
+          }
+          const done = await uploadFiles(this.deps, agent, ref, wanted.paths)
+          if ('error' in done) return { result: textResult(done.error, true) }
+          const shown = await this.after(id, done.reply, { ...step, detail: done.names })
+          return { result: { ...shown, content: [{ type: 'text', text: done.said }, ...shown.content] }, detail: done.names }
         }
         case 'navegador_digitar': {
           const target = String(args['alvo'] ?? '').trim()
