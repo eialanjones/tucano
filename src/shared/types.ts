@@ -690,6 +690,7 @@ export type BrowserOp =
   | 'close'
   | 'clear'
   | 'input'
+  | 'setFiles' // puts files in a file input without the native dialog (shared/upload.ts)
   | 'headful' // the page is a bot check: the same lane, in a real window (chrome.ts)
 
 // What I do on the agent's browser from the panel, when it has no window of its own
@@ -721,6 +722,7 @@ export interface BrowserReply {
   text?: string
   shown?: boolean // the window is open for me
   headful?: boolean // drawn in a real window because this site only lets a real browser through (not a takeover)
+  chooser?: boolean // a click opened a file chooser (intercepted): the files go in with navegador_enviar_arquivo
   point?: { x: number; y: number } // where it just clicked or typed, as a fraction of the viewport
   signs?: PageSigns // what the page is when it isn't the page: a bot check, a refusal, a wall (shared/wall.ts)
 }

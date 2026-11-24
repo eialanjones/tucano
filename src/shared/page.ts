@@ -172,3 +172,26 @@ export const TEXT = `(() => { ${SECRETS}
   for (const s of secrets) if (s.length >= 4) text = text.split(s).join('••••')
   return text
 })()`
+
+// The file input a ref leads to, marked with a token so the DevTools side can select it: the element
+// itself, the control of a <label>, an input inside it, the nearest one among its ancestors' descendants
+// (up to 4 levels), else the only one on the page. Returns the token, or why not: 'gone' (the ref is no
+// longer on the page), 'none' (no file input there) or 'single' (several files for a one-file input).
+export const FILE_INPUT = (ref: number, token: string, count: number): string => `(() => {
+  const el = window.__adRefs && window.__adRefs[${ref - 1}] && window.__adRefs[${ref - 1}].deref()
+  if (!el || !el.isConnected) return 'gone'
+  for (const old of document.querySelectorAll('[data-ad-file]')) old.removeAttribute('data-ad-file')
+  const FILE = 'input[type=file]'
+  const within = (root) => (root.matches && root.matches(FILE) ? root : root.querySelector && root.querySelector(FILE))
+  let input = within(el)
+  if (!input && el.control && el.control.matches && el.control.matches(FILE)) input = el.control
+  for (let up = el.parentElement, i = 0; !input && up && i < 4; up = up.parentElement, i++) input = up.querySelector(FILE)
+  if (!input) { const all = document.querySelectorAll(FILE); if (all.length === 1) input = all[0] }
+  if (!input) return 'none'
+  if (input.disabled) return 'disabled'
+  if (${count} > 1 && !input.multiple) return 'single'
+  input.setAttribute('data-ad-file', ${JSON.stringify(token)})
+  return ${JSON.stringify(token)}
+})()`
+
+export const FILE_INPUT_DONE = (token: string): string => `(() => { for (const e of document.querySelectorAll('[data-ad-file=' + ${JSON.stringify(JSON.stringify(token))} + ']')) e.removeAttribute('data-ad-file'); return true })()`

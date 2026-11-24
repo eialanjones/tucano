@@ -14,6 +14,7 @@ import { chromeKeyringFlags, findChrome, userAgentPlatform } from './platform'
 import { fillRefused, FILL, HIDE_SECRETS, POINT, PICK, SNAPSHOT, TEXT } from '../shared/page'
 import { MAX_FILE_BYTES, type BrowserInput, type BrowserOp, type BrowserReply } from '../shared/types'
 import { land, partialFolder, refuse } from './downloads'
+import { setFileInput, type PendingChooser } from '../shared/upload'
 
 // Google Chrome on this computer, where it usually is on each system (see platform.ts).
 export const CHROME = findChrome()
@@ -94,6 +95,7 @@ class Tab {
   session = '' // the tab we drive
   target = ''
   url = ''
+  chooser?: PendingChooser & { at: number } // the last file chooser the page tried to open, kept 2 minutes (navegador_enviar_arquivo)
   private world: number | undefined // our isolated world in the tab's main frame
   closedAll?: () => void // every tab is gone (I closed the window)
   onDownload?: (method: string, params: Record<string, unknown>) => void // a download began or moved on
@@ -113,6 +115,12 @@ class Tab {
   // would be told I'm using its browser and refused its next action.
   get inView(): boolean {
     return (this.headed && !this.offscreen) || this.remote
+  }
+
+  // Page.setInterceptFileChooserDialog: on while the agent drives (its files go in with navegador_enviar_arquivo),
+  // off while the person has the window, so their own file dialogs open as usual.
+  async intercept(on: boolean): Promise<void> {
+    await this.cmd('Page.setInterceptFileChooserDialog', { enabled: on }).catch(() => {})
   }
 
   // Chrome reads commands on its fd 3 and writes on fd 4, each message ending in a NUL.
@@ -181,6 +189,7 @@ class Tab {
     }
     const params = (m['params'] ?? {}) as Record<string, unknown>
     if (typeof m['method'] === 'string' && m['method'].startsWith('Browser.download')) return this.onDownload?.(m['method'], params)
+    if (m['method'] === 'Page.fileChooserOpened' && m['sessionId'] === this.session && typeof params['backendNodeId'] === 'number') this.chooser = { backendNodeId: params['backendNodeId'], mode: String(params['mode']), at: Date.now() }
     const info = params['targetInfo'] as { targetId: string; type: string; url: string; openerId?: string } | undefined
     if (m['method'] === 'Target.targetCreated' && info?.type === 'page' && info.openerId === this.target) void this.follow(info.targetId).catch(() => {}) // a link that opens a new tab: go with it
     else if (m['method'] === 'Target.targetInfoChanged' && info?.targetId === this.target) this.url = info.url
@@ -190,7 +199,13 @@ class Tab {
       const session = m['sessionId']
       const fast = this.onFrame?.(String(params['data'])) ?? false
       setTimeout(() => void this.send('Page.screencastFrameAck', { sessionId: params['sessionId'] }, String(session)).catch(() => {}), fast ? FRAME_MS : IDLE_MS).unref()
-    } else if ((m['method'] === 'Runtime.executionContextsCleared' || m['method'] === 'Page.frameNavigated') && m['sessionId'] === this.session) this.world = undefined
+    } else if ((m['method'] === 'Runtime.executionContextsCleared' || m['method'] === 'Page.frameNavigated') && m['sessionId'] === this.session) {
+      this.world = undefined
+      // The page itself navigated: a chooser it opened before is no longer for us. An iframe navigating
+      // (Drive has several) leaves it alone.
+      const frame = params['frame'] as { parentId?: string } | undefined
+      if (m['method'] === 'Runtime.executionContextsCleared' || !frame?.parentId) this.chooser = undefined
+    }
   }
 
   private async checkClosed(targetId: string): Promise<void> {
@@ -206,8 +221,12 @@ class Tab {
     this.session = sessionId
     this.target = targetId
     this.world = undefined
+    this.chooser = undefined
     await this.cmd('Page.enable')
     await this.cmd('Runtime.enable')
+    // A file chooser the page opens is intercepted (Page.fileChooserOpened, kept in this.chooser) while the agent drives:
+    // no native dialog, and the agent puts the files in with navegador_enviar_arquivo. Not while the person has the window.
+    await this.intercept(!this.inView)
     if (!this.headed) {
       // Headless Chrome says so in its user agent; sites see a plain Chrome.
       const { userAgent } = (await this.send('Browser.getVersion')) as { userAgent: string }
@@ -586,6 +605,7 @@ export class ChromeBrowsers {
     if (op === 'show' && this.windowless) {
       const tab = await this.tab(agentId)
       tab.remote = true
+      await tab.intercept(false) // the person has it now: their own file dialogs
       this.onShown(agentId, true)
       return { url: tab.url, title: '', shown: true }
     }
@@ -593,6 +613,7 @@ export class ChromeBrowsers {
       const t = this.tabs.get(agentId)
       if (t?.remote) {
         t.remote = false
+        await t.intercept(true)
         this.onShown(agentId, false)
       }
       return { url: t?.url ?? '', title: '', shown: false }
@@ -611,6 +632,7 @@ export class ChromeBrowsers {
       // one thing I asked to see it for.
       if (current?.offscreen) {
         current.offscreen = false
+        await current.intercept(false) // in view now: the person's own file dialogs
         await this.placeWindow(current, IN_VIEW)
         await current.cmd('Page.bringToFront').catch(() => {})
         this.onShown(agentId, true)
@@ -653,12 +675,22 @@ export class ChromeBrowsers {
       case 'snapshot':
         return { ...(await tab.run<BrowserReply>(SNAPSHOT)), shown: tab.inView }
       case 'click': {
+        const started = Date.now()
         const at = typeof args['ref'] === 'number' ? await tab.run<{ x: number; y: number } | null>(POINT(args['ref'], false)) : { x: Number(args['x']), y: Number(args['y']) }
         if (!at || !Number.isFinite(at.x) || !Number.isFinite(at.y)) throw new Error(L('Esse elemento não está mais na página. Leia a página de novo.', 'That element is no longer on the page. Read the page again.'))
         await wait(80)
         await this.click(tab, at.x, at.y)
         await this.settle(tab)
-        return here(true, at)
+        // The click opened a file chooser (intercepted, so no dialog): the agent is told how to send the files.
+        return { ...(await here(true, at)), ...(tab.chooser && tab.chooser.at >= started ? { chooser: true } : {}) }
+      }
+      case 'setFiles': {
+        // The pending chooser only when no field was named: with a field, that field is the one to fill.
+        const chooser = args['ref'] === undefined && tab.chooser && Date.now() - tab.chooser.at < 120_000 ? tab.chooser : undefined
+        const used = await setFileInput(tab, typeof args['ref'] === 'number' ? args['ref'] : undefined, (args['paths'] as string[]) ?? [], chooser)
+        if (used === 'chooser') tab.chooser = undefined
+        await wait(200)
+        return here(true)
       }
       case 'type': {
         const ref = Number(args['ref'])

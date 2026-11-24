@@ -10,7 +10,7 @@ import { basename, dirname, extname, join, posix, sep } from 'node:path'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { L } from '../shared/lang'
 import type { CoreEvent } from '../shared/rpc'
-import { PROJECTS_DIR, type Agent, type Artifact, type ArtifactKind, type ComputerInfo, type LentFolder, type Service } from '../shared/types'
+import { MAX_FILE_BYTES, PROJECTS_DIR, type Agent, type Artifact, type ArtifactKind, type ComputerInfo, type LentFolder, type Service } from '../shared/types'
 import type { Db } from './db'
 import { textResult, type ToolDef } from './gateway'
 import { MacComputer, macTools } from './mac'
@@ -790,6 +790,42 @@ export class Computers {
     return r.isError ? r : textResult(edited(containerPath(path), count))
   }
 
+  // Copies one file out of the computer to `dest`, as a plain file. `docker cp -L` resolves links inside the
+  // container and writes a plain file here. Docker's Windows CLI resolves an absolute link target
+  // (/etc/hostname) against the link's folder, so there the path is resolved first, inside the container.
+  // Returns why it failed, or undefined.
+  private async pull(agentId: string, from: string, dest: string): Promise<string | undefined> {
+    if (isWin) {
+      const real = await docker(['exec', this.name(agentId), 'readlink', '-f', '--', from], { timeoutMs: 15_000 })
+      if (real.code === 0 && real.stdout.trim()) from = real.stdout.trim()
+    }
+    const r = await docker(['cp', '-L', `${this.name(agentId)}:${from}`, dest], { timeoutMs: 120_000 })
+    return r.code === 0 ? undefined : r.stderr.trim() || L(`Não achei ${from}.`, `I couldn't find ${from}.`)
+  }
+
+  // Files of the computer's /work copied to the host under `dir` (one folder each, so equal names don't
+  // collide), for a page's file input (navegador_enviar_arquivo). Paths are already inside /work. Each one
+  // must exist, be a plain file and fit MAX_FILE_BYTES. Returns the host paths, or why not.
+  async copyOut(agent: Agent, paths: string[], dir: string): Promise<{ paths: string[] } | { error: string }> {
+    if (agent.computerKind === 'mac' || !agent.computer) return { error: L('Enviar arquivo precisa do computador do Tucano (Linux). Esse agente não tem um.', "Uploading a file needs Tucano's computer (Linux). This agent doesn't have one.") }
+    await this.ensure(agent.id)
+    const out: string[] = []
+    for (const [i, from] of paths.entries()) {
+      const st = await this.exec(agent.id, `stat -L -c '%F|%s' -- ${q(from)}`, { timeoutSeconds: 15 })
+      const [kind, size] = st.stdout.trim().split('|')
+      if (st.code !== 0 || !kind) return { error: L(`Não achei o arquivo ${from}.`, `I couldn't find the file ${from}.`) }
+      if (kind !== 'regular file' && kind !== 'regular empty file') return { error: L(`${from} não é um arquivo (pastas não dá pra enviar).`, `${from} isn't a file (folders can't be uploaded).`) }
+      if (Number(size) > MAX_FILE_BYTES) return { error: L(`${from} passa do limite de ${MAX_FILE_BYTES / 1024 / 1024} MB.`, `${from} is over the ${MAX_FILE_BYTES / 1024 / 1024} MB limit.`) }
+      const folder = join(dir, String(i))
+      mkdirSync(folder, { recursive: true })
+      const dest = join(folder, basename(from) || 'arquivo')
+      const failed = await this.pull(agent.id, from, dest)
+      if (failed) return { error: failed }
+      out.push(dest)
+    }
+    return { paths: out }
+  }
+
   // Copies a file out of the computer into the app's artifact store, as it is now.
   private async keep(
     agentId: string,
@@ -801,18 +837,10 @@ export class Computers {
     const dir = join(this.deps.dataDir, 'artifacts', id)
     mkdirSync(dir, { recursive: true })
     if (file.containerPath) {
-      // `docker cp -L` resolves links inside the container and writes a plain file here. Docker's
-      // Windows CLI resolves an absolute link target (/etc/hostname) against the link's folder,
-      // so there the path is resolved first, inside the container, and copied as a plain file.
-      let from = file.containerPath
-      if (isWin) {
-        const real = await docker(['exec', this.name(agentId), 'readlink', '-f', '--', from], { timeoutMs: 15_000 })
-        if (real.code === 0 && real.stdout.trim()) from = real.stdout.trim()
-      }
-      const r = await docker(['cp', '-L', `${this.name(agentId)}:${from}`, join(dir, name)], { timeoutMs: 120_000 })
-      if (r.code !== 0) {
+      const failed = await this.pull(agentId, file.containerPath, join(dir, name))
+      if (failed) {
         rmSync(dir, { recursive: true, force: true })
-        return { error: r.stderr.trim() || L(`Não achei ${file.containerPath}.`, `I couldn't find ${file.containerPath}.`) }
+        return { error: failed }
       }
     } else writeFileSync(join(dir, name), file.data ?? Buffer.alloc(0))
     const size = statSync(join(dir, name)).size

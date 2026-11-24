@@ -10,6 +10,7 @@ import { L } from '../shared/lang'
 import { fillRefused, FILL, HIDE_SECRETS, POINT, PICK, SNAPSHOT, TEXT } from '../shared/page'
 import { MAX_FILE_BYTES, type BrowserOp, type BrowserReply as Reply } from '../shared/types'
 import { land, partialFolder, refuse } from '../core/downloads'
+import { setFileInput } from '../shared/upload'
 
 const W = 1280
 const H = 800
@@ -228,6 +229,22 @@ export class Browsers {
         const [w, h] = win.getContentSize() as [number, number]
         wc.sendInputEvent({ type: 'mouseWheel', x: Math.round(w / 2), y: Math.round(h / 2), deltaX: 0, deltaY: -Number(args['dy'] ?? 600) })
         await wait(500)
+        return { ...here(), frame: await this.frame(win) }
+      }
+      case 'setFiles': {
+        // The same DevTools sequence as Chrome's, over Electron's debugger: attached only for this.
+        const attached = !wc.debugger.isAttached()
+        if (attached) wc.debugger.attach('1.3')
+        try {
+          await setFileInput({ run: iso, cmd: (method, params) => wc.debugger.sendCommand(method, params) as Promise<Record<string, unknown>> }, typeof args['ref'] === 'number' ? args['ref'] : undefined, (args['paths'] as string[]) ?? [])
+        } finally {
+          if (attached) {
+            try {
+              wc.debugger.detach()
+            } catch {}
+          }
+        }
+        await wait(200)
         return { ...here(), frame: await this.frame(win) }
       }
       case 'back':

@@ -24,6 +24,7 @@ import { NEVER } from './local-paths'
 import { maskSecrets } from './step-text'
 import type { AppOutcome } from './apps'
 import type { BrowserOutcome } from './browser'
+import { ENVIAR, noUploadHere } from './browser-upload'
 import { textResult, type ToolDef } from './gateway'
 import { macPath, type MacComputer } from './mac'
 import { systemName } from './platform'
@@ -225,6 +226,7 @@ export class NodeServer {
       case NODE_APPROVED:
         return this.approved(agent, args)
     }
+    if (name === ENVIAR) return textResult(noUploadHere(), true)
     if (this.reach.browser && name.startsWith('navegador_')) return asked('browser', await this.reach.browser.call(agent, name, args, ctx))
     if (this.reach.apps && /^apps?_/.test(name)) return asked('apps', await this.reach.apps.call(agent, name, args))
     const hit = this.connectorTools().find((t) => t.tool.name === name)

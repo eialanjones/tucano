@@ -78,6 +78,7 @@ import { mainCipher, plainCipher, Secrets } from './secrets'
 import { Vault } from './vault'
 import { COFRE, pageOrigin } from '../shared/vault'
 import { Browser, browserTools, CHAT_ONLY_BROWSER_TOOLS, type BrowserHost } from './browser'
+import { ENVIAR, sweepUploads } from './browser-upload'
 import { downloadsFolder } from './downloads'
 import { findOnPath, isWin, loginShell, onPath, openWindowsConsole, osOf, shellCommand, terminalCommand } from './platform'
 import { ChromeBrowsers, hasChrome } from './chrome'
@@ -1020,6 +1021,8 @@ const chrome =
       )
     : undefined
 const host: BrowserHost = chrome ? (agentId, op, args) => chrome.run(agentId, op, args) : electronHost
+// Upload copies left over from before a restart (their timers died with it); a failure is logged, startup goes on.
+bg(Promise.resolve().then(() => sweepUploads(dataDir)), 'sweepUploads')
 
 const transcriber = new Transcriber()
 // Dictation's places: the whisper-cli inside the app, and the folder for the models it downloads.
@@ -1061,6 +1064,7 @@ const browser = new Browser({
   dataDir,
   emit,
   logins: vault,
+  files: (agent, paths, dir) => computers.copyOut(agent, paths, dir),
   me: () => settings().workspaceName,
   jev: {
     key: () => classifierKeyOf(classifierFor(settings(), 'browser') ?? JEV_CLASSIFIER),
@@ -1107,8 +1111,8 @@ const computers = new Computers({ db, dataDir, emit, shoot })
 const nodeLog = new NodeLog(join(dataDir, 'node', 'log.jsonl'))
 const nodeServer = new NodeServer(new MacComputer({ db, dataDir, emit, shoot }), {
   connectors: { list: () => connectors.list().filter((c) => !nodeOf(c.url)), tools: (id) => db.tools(id), call: (id, name, args) => connectors.call(id, name, args) },
-  // Not the tools that hand files to this app's chat or type the logins saved here: the server's agents have neither.
-  browser: { tools: () => browserTools().filter((t) => !CHAT_ONLY_BROWSER_TOOLS.has(t.name)), call: (agent, name, args, ctx) => browser.call(agent, name, args, ctx), approved: (agent, args) => browser.approved(agent, args) },
+  // Not the tools that hand files to this app's chat or type the logins saved here (the server's agents have neither), nor the upload: their files aren't on this Mac.
+  browser: { tools: () => browserTools().filter((t) => !CHAT_ONLY_BROWSER_TOOLS.has(t.name) && t.name !== ENVIAR), call: (agent, name, args, ctx) => browser.call(agent, name, args, ctx), approved: (agent, args) => browser.approved(agent, args) },
   apps: { tools: appTools, call: (agent, name, args) => desktopApps.call(agent, name, args), approved: (agent, args) => desktopApps.approved(agent, args), lent: () => settings().node?.apps ?? [] },
   folders: () => settings().node?.folders ?? [],
   dataDir,
