@@ -96,7 +96,7 @@ import { HermesImport } from './HermesImport'
 import { AccountPicker, AccountsCard, HarnessList, HarnessMcps, ModelPicker, onGateway, OutsideGateway, usableEngines } from './Harness'
 import { AppsCard } from './Apps'
 import { AgentModelsPanel } from './AgentModelsPanel'
-import { ConnectorGrid, OwnAppSetup, ThirdPartyWarning } from './ConnectorStore'
+import { ConnectorGrid, ConnectorIconPicker, ConnectorTile, OwnAppSetup, ThirdPartyWarning } from './ConnectorStore'
 import { entryOf } from '../../../shared/connector-catalog'
 import { directReports, possibleBosses } from '../../../shared/org'
 import { ruleTool } from '../../../shared/classify'
@@ -875,7 +875,11 @@ export function AgentPage({ id, draft: proposed, fromMessage }: { id?: string; d
                 return (
                   <Row
                     key={c.id}
-                    label={c.name}
+                    label={
+                      <span className="lrow__channel">
+                        <ConnectorTile c={c} size={18} /> {c.name}
+                      </span>
+                    }
                     sub={
                       c.status === 'needs_auth' ? (
                         <span className="lrow__warn">
@@ -2053,7 +2057,7 @@ function MyApprovals(): ReactNode {
     <Page title={L('Aprovações', 'Approvals')} subtitle={L('Nada sensível acontece sem você. Cada aprovação cobre uma ação exata.', 'Review requests for sensitive actions. Each approval covers one specific action.')} actions={<AlwaysRulesLink />}>
       <HarnessNotices />
       {pending.length === 0 ? (
-        docsWaiting.length + docDates.length > 0 ? null : <NothingWaiting why={L('Quando um agente quiser publicar, apagar ou enviar algo pra fora, o pedido aparece aqui e na conversa.', 'When an agent wants to publish, delete or send something out, the request shows up here and in the conversation.')} />
+        docsWaiting.length + docDates.length > 0 ? null : <NothingWaiting why={L('Quando um agente quiser publicar, apagar ou enviar algo pra fora, o pedido aparece aqui e na conversa.', 'Requests to publish, delete or send something appear here and in the conversation.')} />
       ) : (
         <>
           <div className="caps-title">{L(`Esperando você · ${pending.length}`, `Waiting for you · ${pending.length}`)}</div>
@@ -2087,7 +2091,7 @@ export function InboxPage(): ReactNode {
   // One answered by someone else while I was typing stays, with what I typed and who answered.
   const gone = (inbox.answered ?? []).filter((q) => questionDrafts.get(q.id)?.trim() && !inbox.questions.some((x) => x.id === q.id))
   const questions = [...inbox.questions.map((q) => ({ q, done: false })), ...gone.map((q) => ({ q, done: true }))]
-  const nothing = inbox.approvals.length + questions.length + proposals.length + docsWaiting.length + docDates.length + (inbox.harness?.length ?? 0) === 0
+  const nothing = inbox.approvals.length + questions.length + proposals.length + (inbox.harness?.length ?? 0) + docsWaiting.length + docDates.length === 0
   const where = (conversationId: string | undefined, agentId: string): string => {
     const conv = conversations.find((c) => c.id === conversationId)
     const who = agents.find((x) => x.id === agentId)?.name
@@ -2106,7 +2110,7 @@ export function InboxPage(): ReactNode {
     </div>
   )
   return (
-    <Page title={L('Pra você', 'For you')} subtitle={L('O que espera por você: aprovações, perguntas, documentos e prazos.', 'What waits on you: approvals, questions, documents and dates.')} actions={<AlwaysRulesLink />}>
+    <Page title={L('Pra você', 'For you')} subtitle={L('O que espera por você: aprovações, perguntas, documentos e prazos.', 'Approvals, questions, documents and dates that need your response.')} actions={<AlwaysRulesLink />}>
       {nothing && <NothingWaiting why={L('Quando um agente precisar da sua aprovação, te fizer uma pergunta ou guardar um documento para você aprovar, aparece aqui.', 'When an agent needs your approval, asks you something or saves a document for you to approve, it shows up here.')} />}
       <HarnessNotices />
       {inbox.approvals.length > 0 && (
@@ -2222,7 +2226,7 @@ export function ConnectorsPage(): ReactNode {
           <div className="table">
             {connectors.map((c) => (
               <div key={c.id} className="table__row">
-                <Icon name="plug" size={15} />
+                <ConnectorTile c={c} size={20} />
                 <span className="grow">
                   <strong>{c.name}</strong> <span className="muted small">· {L(`${c.tools.filter((t) => t.enabled).length} ferramentas`, `${c.tools.filter((t) => t.enabled).length} tools`)}</span>
                 </span>
@@ -2279,6 +2283,7 @@ function ConnectorDetails({ c, onClose }: { c: Connector; onClose: () => void })
           <span className={`tag ${STATUS()[c.status].tone}`}>{STATUS()[c.status].label}</span>
           <span className="muted small mono truncate grow">{address(c)}</span>
         </div>
+        <ConnectorIconPicker c={c} />
         {nodeOf(c.url) ? (
           <ComputerAgents connectorId={c.id} />
         ) : (

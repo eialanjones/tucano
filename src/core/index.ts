@@ -15,7 +15,7 @@ import { L, lang, langOf, locale, setLang, type Lang } from '../shared/lang'
 import { errorFor, UserError } from '../shared/errors'
 import type { Api, CoreEvent, Method, Params, Request, Wire } from '../shared/rpc'
 import { limitError, paramsError } from '../shared/rpc-shapes'
-import { ACCOUNT_ENGINES, accountsOn, EXECUTION_DAYS, applyOrder, proposalsOf, type AgentChanges, type AgentDraft, type Conversation, type Proposal, type ProposalsResult, type UndoInfo, channelName, ENGINES, inQuietHours, modelInfo, personScope, rememberModels, scopePerson, usable, WEBHOOK_PORT, type Account, type AccountEngine, type Agent, type CodexQuota, type Quota, type BrowserReply, type Message, type EngineId, type EngineStatus, type Person, type NodeInfo, type Routine, type Settings, type Task, isTeam, MAX_TASK_NOTES, type WikiChange, type WikiSource, routineCap, MAX_TASK_TITLE, type TracesView } from '../shared/types'
+import { ACCOUNT_ENGINES, accountsOn, EXECUTION_DAYS, applyOrder, proposalsOf, type AgentChanges, type AgentDraft, type Conversation, type Proposal, type ProposalsResult, type UndoInfo, channelName, ENGINES, inQuietHours, modelInfo, personScope, rememberModels, scopePerson, usable, WEBHOOK_PORT, type Account, type AccountEngine, type Agent, type CodexQuota, type Quota, type BrowserReply, type Message, type EngineId, type EngineStatus, type Person, type NodeInfo, type Routine, routineCap, type Settings, type Task, type TracesView, isTeam, MAX_TASK_TITLE, MAX_TASK_NOTES, type WikiChange, type WikiSource } from '../shared/types'
 import { agentOwner, channelEditError, shareComputer as shareComputerFor, cleanName, dmOwner, hashSecret, Hub, MAX_NAME, mayEditChannel, nameLongError, nameTakenError, People, routineDetail, stripInvisible, type Purged } from './people'
 import { restricted } from '../shared/access'
 import { assertAgentVisible, assertChannelVisible, assertReplyVisible, grantOwnChannel, membersFor, restrictedIds } from './access-policy'
@@ -82,9 +82,10 @@ import { ENVIAR, sweepUploads } from './browser-upload'
 import { downloadsFolder } from './downloads'
 import { findOnPath, isWin, loginShell, onPath, openWindowsConsole, osOf, shellCommand, terminalCommand } from './platform'
 import { ChromeBrowsers, hasChrome } from './chrome'
-import { checkFolder, Computers, folderName, type Shooter } from './computer'
+import { checkFolder, Computers, folderName, lentWhereTheyAre, type Shooter } from './computer'
 import { Memories } from './memory'
 import { Titles } from './titles'
+import { shortTitle } from '../shared/titles'
 import { loginEnv, MacComputer } from './mac'
 import { NodeLog, NodeServer } from './node-server'
 import { NodeLinks, NodeUplink, type LinkPort } from './node-link'
@@ -682,6 +683,7 @@ function emit(event: CoreEvent): void {
   const more = event.type === 'message' && db.recordActivity(event.message, viewing)
   hub.emit(event)
   if (event.type === 'message') titles?.forReply(event.message)
+  if (event.type === 'message') nameTucaConversation(event.message)
   // An approval asked or decided changes what waits on its deciders.
   if (event.type === 'approval') hub.emit({ type: 'inbox' })
   toPhone(event)
@@ -1102,7 +1104,17 @@ const memory = new Memories({ db, engines: operationEngines(engineImpls, { opera
 titles = new Titles({ db, engines: operationEngines(engineImpls, { operation: 'title' }), settings: () => enginesReady.then(settings), emit, workDir: join(dataDir, 'agents') })
 const wikiEngines = operationEngines(engineImpls, { operation: 'wiki' })
 
-const computers = new Computers({ db, dataDir, emit, shoot })
+const computers = new Computers({ db, dataDir, emit, shoot, secrets: (agentId) => vault.openedFor(agentId) })
+
+// Once: folders lent before the computer checked where each really is are kept as where they lead today.
+if (!db.meta('lentReal')) {
+  for (const agent of db.agents()) {
+    const lent = agent.folders ?? []
+    const real = lentWhereTheyAre(lent, { dataDir })
+    if (real.some((f, i) => f.path !== lent[i]!.path)) db.setFolders(agent.id, real)
+  }
+  db.setMeta('lentReal', '1')
+}
 
 // This computer lent to servers' Tucanos (core/node-server.ts, core/node-link.ts): the app calls each server it
 // was paired with and lends it (Settings › Servers), and that server's agents use this computer's terminal, files,
@@ -1560,8 +1572,9 @@ const demoPath = join(process.cwd(), 'scripts', 'demo-mcp-server.mjs')
 // The Tuca, made once (the introduction, or the first start after it) and kept
 // even when archived. His model: the one given, else a plan's, else the router's
 // or the memory's, which the introduction made sure work.
-// Each person's DM with him is kept: every way to the builder screen opens it where it was, and his
-// session goes on. `fresh` ("Nova conversa") starts another: the old one goes, with only his hello in the new.
+// Each person has several conversations with him, one per request, each kept with its own session:
+// every way to him opens the one that was last talked in. `fresh` ("Nova conversa") starts another and
+// keeps the others; one that nobody wrote in yet is the new one already, so empty ones don't pile up.
 // A model runs here when its harness is chosen and signed in.
 function worksWith(s: Settings): (id: string) => boolean {
   return (id) => {
@@ -1595,28 +1608,47 @@ function ensureTuca(modelId?: string, fresh = false, person = db.ownerId()): { a
   }
   if (!tuca) {
     const model = readyModel(s, modelId)
-    tuca = tucaAgent(model ?? 'sonnet', db.agents().map((a) => a.handle), s.defaultLimit)
+    tuca = tucaAgent(model ?? 'sonnet', db.agents().map((a) => a.handle))
     db.saveAgent(tuca)
     emit({ type: 'agent', agent: tuca })
   }
-  const theirs = (c: { kind: 'channel' | 'dm'; owner?: string; name: string }): boolean => c.kind === 'dm' && c.name === tuca!.id && dmOwner(c, db.ownerId()) === person
-  let dm = db.conversations().find(theirs)
-  if (dm && fresh) {
-    for (const m of db.messagesWithRun(['working'])) if (m.conversationId === dm.id) runner.stop(m.id)
-    runner.forgetSessions({ conversationId: dm.id })
-    db.deleteConversation(dm.id)
-    emit({ type: 'conversation_removed', id: dm.id, for: person })
-    dm = undefined
-  }
+  // The one last talked in comes first; one nobody wrote in yet is where a new conversation starts.
+  const mine = tucaConversations(tuca.id, person)
+  let dm = fresh ? mine.find((c) => !db.firstRequest(c.id)) : mine[0]
   if (!dm) {
-    db.createConversation({ id: randomUUID(), kind: 'dm', name: tuca.id, members: [tuca.id], owner: person })
-    dm = db.conversations().find(theirs)!
-    const hello: Message = { id: randomUUID(), conversationId: dm.id, author: { kind: 'agent', id: tuca.id }, text: tucaHello(), at: Date.now() }
+    const id = randomUUID()
+    db.createConversation({ id, kind: 'dm', name: tuca.id, members: [tuca.id], owner: person })
+    const hello: Message = { id: randomUUID(), conversationId: id, author: { kind: 'agent', id: tuca.id }, text: tucaHello(), at: Date.now() }
     db.saveMessage(hello)
-    emitConversations([dm.id])
+    emitConversations([id])
     emit({ type: 'message', message: hello })
+    dm = db.conversation(id)!
   }
   return { agentId: tuca.id, conversationId: dm.id }
+}
+
+// A person's conversations with the Tuca, the one last talked in first.
+function tucaConversations(tucaId: string, person: string): Conversation[] {
+  return db
+    .conversations()
+    .filter((c) => c.kind === 'dm' && c.name === tucaId && dmOwner(c, db.ownerId()) === person)
+    .sort((a, b) => (b.lastAt ?? b.createdAt ?? 0) - (a.lastAt ?? a.createdAt ?? 0))
+}
+
+// A conversation with the Tuca is named after what the person first asked there: its own words at once
+// (src/shared/titles.ts), then the title a cheap model gives that request (src/core/titles.ts), unless
+// the person named the conversation themselves meanwhile.
+function nameTucaConversation(m: Message): void {
+  if (m.author.kind !== 'person' || m.threadId) return
+  const c = db.conversation(m.conversationId)
+  if (!c || c.kind !== 'dm' || db.agent(c.name)?.kind !== 'tuca') return
+  const first = db.firstRequest(c.id)
+  if (first?.id !== m.id) return
+  const own = shortTitle(m.text)
+  const next = !c.title ? m.title || own : c.title === own && m.title ? m.title : undefined
+  if (!next || next === c.title) return
+  db.setConversationTitle(c.id, next)
+  hub.emit({ type: 'conversation', conversation: db.conversation(c.id)! })
 }
 
 // One of a reply's proposals changed: settled once (applied, with what it made or changed, or
@@ -2032,6 +2064,8 @@ function reach(ctx: Ctx, conversationId: string | undefined): void {
 // The person's DM with an agent: the one there is, or a new one.
 function dmFor(ctx: Ctx, agentId: string): string {
   assertAgentVisible(db, ctx.person, agentId)
+  // With the Tuca a person has several: the one last talked in.
+  if (db.agent(agentId)?.kind === 'tuca') return ensureTuca(undefined, false, ctx.person.id).conversationId
   const existing = db.conversations().find((c) => c.kind === 'dm' && c.name === agentId && dmOwner(c, db.ownerId()) === ctx.person.id)
   if (existing) return existing.id
   const id = randomUUID()
@@ -2480,6 +2514,15 @@ const api: Handlers = {
   },
 
   ensureTuca: ({ modelId, fresh }, ctx) => ensureTuca(modelId, fresh, ctx.person.id),
+  // A conversation with the Tuca, named by its person ('' goes back to what was first asked there).
+  setConversationTitle: ({ id, title }, ctx) => {
+    reach(ctx, id)
+    const c = db.conversation(id)
+    if (!c || c.kind !== 'dm' || db.agent(c.name)?.kind !== 'tuca' || dmOwner(c, db.ownerId()) !== ctx.person.id) throw new Error(L('Só dá pra dar nome às suas conversas com o Tuca.', 'Only your conversations with Tuca can be named.'))
+    const first = db.firstRequest(id)
+    db.setConversationTitle(id, cleanTaskText(title, 80) || (first ? first.title || shortTitle(first.text) : ''))
+    emitConversations([id])
+  },
   createFromDraft: ({ messageId }, ctx) => {
     reachMessage(ctx, messageId)
     return createDraft(ctx, messageId)
@@ -3023,6 +3066,7 @@ const api: Handlers = {
     bg(connectors.connect(id), 'reconnectConnector')
   },
   setConnectorToken: ({ id, token }) => connectors.setToken(id, token),
+  setConnectorIcon: ({ id, icon }) => connectors.setIcon(id, icon),
   // The store for a screen without the catalog's file (the iPhone app): its entries as data, in the
   // person's language; a connector added by its entry and the values asked, filled in here.
   connectorCatalog: () => ({ categories: CATEGORIES(), entries: catalogView(), added: connectors.list().map((c) => entryOf(c)?.id).filter((id): id is string => !!id) }),
@@ -3198,9 +3242,11 @@ const api: Handlers = {
     if (!agent) return
     const why = checkFolder(path, { dataDir })
     if (why) throw new Error(why)
+    // Kept as where it really is, as addNodeFolder does: the computer checks it is still there when it starts.
+    const real = realpathSync(path)
     const folders = agent.folders ?? []
-    if (folders.some((f) => f.path === path)) return
-    setFolders(agent, [...folders, { name: folderName(path, folders.map((f) => f.name)), path, readOnly: false }])
+    if (folders.some((f) => f.path === real || f.path === path)) return
+    setFolders(agent, [...folders, { name: folderName(real, folders.map((f) => f.name)), path: real, readOnly: false }])
   },
   folderAction: ({ agentId, name, action }) => {
     const agent = db.agent(agentId)
@@ -3350,17 +3396,45 @@ const api: Handlers = {
   },
   // Documentos: each call goes on with the person asking; who may do what is the folder's own access (core/docs.ts).
   docs: (_p, ctx) => viaDocs(() => docs.tree(ctx.person)),
-  docFolderSave: (p, ctx) => viaDocs(() => docs.saveFolder(ctx.person, p)),
+  docFolderSave: (p, ctx) => {
+    // Who sees a folder decides who sees everything in it: a change of that goes to the team's log.
+    const before = p.id ? docs.folderAccess(p.id) : undefined
+    const saved = viaDocs(() => docs.saveFolder(ctx.person, p))
+    if (p.id && !saved.privateTo && JSON.stringify(before ?? null) !== JSON.stringify(saved.access ?? null)) record(ctx, 'document.folder_access', saved.id, { name: docs.folderName(saved.id) })
+    return saved
+  },
   docFolderRemove: ({ id }, ctx) => viaDocs(() => docs.removeFolder(ctx.person, id)),
   docAdd: ({ folderId, name, data, summary }, ctx) => viaDocsAsync(() => docs.add(ctx.person, { folderId, name, data: Buffer.from(data, 'base64'), ...(summary ? { summary } : {}) })),
   docSaveArtifact: ({ artifactId, folderId }, ctx) => viaDocsAsync(() => docs.saveFromArtifact(ctx.person, artifactId, folderId)),
-  docMove: ({ id, folderId, name }, ctx) => viaDocs(() => docs.move(ctx.person, id, folderId, name)),
+  docMove: ({ id, folderId, name }, ctx) => {
+    // Out of the team's folders into a personal one: from there on only its person reads its history,
+    // so the team's log keeps that it went, and from where.
+    const before = docs.peek(id)
+    const moved = viaDocs(() => docs.move(ctx.person, id, folderId, name))
+    const taken = before ? docs.takenToPersonal(before, moved) : null
+    if (taken) record(ctx, 'document.to_personal', id, taken)
+    return moved
+  },
   docRename: ({ id, name }, ctx) => viaDocs(() => docs.rename(ctx.person, id, name)),
   docTrash: ({ id }, ctx) => viaDocs(() => docs.trash(ctx.person, id)),
   docRestore: ({ id }, ctx) => viaDocs(() => docs.restore(ctx.person, id)),
+  docPurge: ({ id }, ctx) => {
+    // Nothing is left of it to tell what happened: the team's log keeps who deleted what, and from where.
+    const gone = viaDocs(() => docs.purge(ctx.person, id))
+    if (gone) record(ctx, 'document.deleted', id, gone)
+  },
   docText: ({ id, version }, ctx) => viaDocsAsync(() => docs.text(ctx.person, id, version)),
   docHistory: ({ id }, ctx) => viaDocs(() => docs.history(ctx.person, id)),
   docRestoreVersion: ({ id, n }, ctx) => viaDocsAsync(() => docs.restoreVersion(ctx.person, id, n)),
+  // The same road as a file dropped on the wiki (wikiAddFile), from where the file already is: no second upload.
+  docToWiki: async ({ id }, ctx) => {
+    const { name, data } = viaDocs(() => docs.forWiki(ctx.person, id))
+    const text = await extractFile(name, data)
+    const src = wiki.addSource({ title: cleanTitle(name) || name, text, kind: 'file', file: { name, data }, by: ctx.person.id, status: 'reading' })
+    bg(curator.ingest(src.id), 'wikiIngest')
+    docs.sentToWiki(ctx.person, id)
+    return src
+  },
   docSearch: ({ q, folderId }, ctx) => viaDocs(() => docs.search(ctx.person, q, folderId)),
   docByArtifact: (_p, ctx) => viaDocs(() => docs.docByArtifact(ctx.person)),
   docDecide: async ({ id, ok, note, version }, ctx) => {
@@ -3611,6 +3685,9 @@ const api: Handlers = {
   activity: ({ personId, kind, before }) => db.activity({ personId, kind, before }),
   inbox: (_, ctx) => people.inbox(ctx.person),
   answerQuestion: ({ id, text }, ctx) => runner.answer(id, text, ctx.person),
+  removeTucaLeave: ({ id }, ctx) => {
+    if (db.removeTucaLeave(id, ctx.person.id)) emit({ type: 'leaves' })
+  },
   confirmQuestion: ({ id, ok }, ctx) => runner.confirm(id, ok, ctx.person),
   // A question's decisions, answered on the card one at a time and then sent: by whoever may answer it (Runner.decidable).
   answerDecision: ({ messageId, index, answer }, ctx) => runner.answerDecision(messageId, index, answer, ctx.person),

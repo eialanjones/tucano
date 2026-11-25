@@ -1,6 +1,6 @@
 // Documentos on a real folder and a real index: the first folders, what is stored, who sees what, who may change
 // folders, and versions, names and the trash.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, sep } from 'node:path'
 import JSZip from 'jszip'
@@ -148,6 +148,26 @@ describe('adding a file', () => {
     expect(ids(docs.search(ana, 'pangolim').map((h) => h.doc))).toEqual([doc.id])
   })
 
+  it('reads a web page for the search without its tags, scripts and styles', async () => {
+    const page = '<html><head><style>p { color: red }</style><script>var segredoDoScript = 1</script></head><body><h1>Relatório</h1><p>A girafa &amp; a zebra &lt;juntas&gt;.</p><SCRIPT>outroScript()</SCRIPT></body></html>'
+    const doc = await put(ana, 'Financeiro', 'pagina.html', page)
+    const { text } = await docs.text(ana, doc.id)
+    expect(text).toBe('Relatório A girafa & a zebra <juntas>.')
+    expect(ids(docs.search(ana, 'girafa').map((h) => h.doc))).toEqual([doc.id])
+    expect(docs.search(ana, 'segredoDoScript')).toEqual([])
+  })
+
+  // A page is read once, from start to end: an opening with no end must not send the reading back over the
+  // rest of the file for each one (200 KB of them used to hold the whole app for about 20 s).
+  it('reads a web page made of openings that never close in the time its size takes', async () => {
+    for (const piece of ['<', '<script', '<style>', '<a href="x" ']) {
+      const started = Date.now()
+      const doc = await put(ana, 'Financeiro', 'ruim.html', piece.repeat(Math.ceil(200_000 / piece.length)))
+      await docs.text(ana, doc.id)
+      expect(Date.now() - started).toBeLessThan(1500)
+    }
+  }, 60_000)
+
   it('uses the first words of the text as the summary, or the one it was given', async () => {
     const auto = await put(ana, 'Financeiro', 'a.md', '# Notas\n\nzebrinha azul')
     expect(auto.summary).toBe('Notas zebrinha azul')
@@ -191,6 +211,42 @@ describe('adding a file', () => {
     expect(existsSync(join(root, 'x.md'))).toBe(false)
     expect(existsSync(join(docs.root, 'x.md'))).toBe(false)
     expect(existsSync(join(docs.root, 'Financeiro', '..', '..', 'x.md'))).toBe(false)
+  })
+
+  // What is read and served is what was kept here, not what a link in its place leads to.
+  it.skipIf(process.platform === 'win32')("gives nothing through a link put in a file's place, or in its folder's", async () => {
+    const secret = join(root, 'chave.txt')
+    writeFileSync(secret, 'SEGREDO')
+    const doc = await put(ana, 'Financeiro', 'notas.md', 'conteudo')
+    const path = docs.fileOf(ana, doc.id)!.path
+    rmSync(path)
+    symlinkSync(secret, path)
+    expect(docs.fileOf(ana, doc.id)).toBeNull()
+    // The folder itself, swapped for a link to one outside that holds a file of the same name.
+    rmSync(path)
+    const outside = join(root, 'fora')
+    mkdirSync(outside)
+    writeFileSync(join(outside, 'notas.md'), 'SEGREDO')
+    rmSync(join(docs.root, 'Financeiro'), { recursive: true })
+    symlinkSync(outside, join(docs.root, 'Financeiro'))
+    expect(docs.fileOf(ana, doc.id)).toBeNull()
+    // And nothing is written through it: not a new file, not a new version over the one outside.
+    expect(await failure(() => put(ana, 'Financeiro', 'plantado.md', 'x'))).toBe('Esse caminho não vale.')
+    expect(await failure(() => docs.newVersion(ana, doc.id, { data: Buffer.from('por cima') }))).toBe('Esse caminho não vale.')
+    expect(existsSync(join(outside, 'plantado.md'))).toBe(false)
+    expect(readFileSync(join(outside, 'notas.md'), 'utf8')).toBe('SEGREDO')
+  })
+
+  it.skipIf(process.platform === 'win32')('keeps as a version only the file itself, and writes the new one in its place, not through a link', async () => {
+    const secret = join(root, 'chave.txt')
+    writeFileSync(secret, 'SEGREDO')
+    const doc = await put(ana, 'Financeiro', 'notas.md', 'conteudo')
+    const path = join(docs.root, 'Financeiro', 'notas.md')
+    rmSync(path)
+    symlinkSync(secret, path)
+    expect(await failure(() => docs.newVersion(ana, doc.id, { data: Buffer.from('por cima') }))).toBe('Esse caminho não vale.')
+    expect(readFileSync(secret, 'utf8')).toBe('SEGREDO')
+    expect(existsSync(join(docs.root, '.versions', doc.id))).toBe(false)
   })
 
   it('keeps a folder name inside the documents folder too', () => {
@@ -301,6 +357,57 @@ describe('what a person sees', () => {
   })
 })
 
+// A personal folder is its person's alone (not the owner's, not an admin's), so nothing that someone else
+// sees is taken into one: it would be gone for them, with no one left to bring it back.
+describe('taking a document to a personal folder', () => {
+  const personalOf = (who: Person, d: Docs = docs): DocFolder => d.tree(who).folders.find((f) => f.privateTo === who.id)!
+  const REFUSED = 'Outras pessoas veem este documento, então ele não vai para uma pasta pessoal. Antes, o dono ou um admin deixa a pasta dele só para você.'
+
+  it('refuses while someone else sees the document, whoever asks', async () => {
+    share('Financeiro', { maria: 'edit' })
+    const doc = await put(maria, 'Financeiro', 'a.md', 'um')
+    // Maria edits the folder, but the owner and the admin see it too.
+    expect(await failure(() => docs.move(maria, doc.id, personalOf(maria).id))).toBe(REFUSED)
+    // The owner too: the admin sees every shared folder.
+    expect(await failure(() => docs.move(ana, doc.id, personalOf(ana).id))).toBe(REFUSED)
+    expect(docs.index.doc(doc.id)!.folderId).toBe(folder('Financeiro').id)
+    expect(readFileSync(join(docs.root, 'Financeiro', 'a.md'), 'utf8')).toBe('um')
+    // An agent working for Maria takes nothing there that she couldn't.
+    expect(await failure(() => docs.moveFor(agents[1]!, maria, doc.id, personalOf(maria).id))).toBe(REFUSED)
+    expect(docs.index.doc(doc.id)!.folderId).toBe(folder('Financeiro').id)
+    // Moving it between the team's folders is as before.
+    expect(docs.move(ana, doc.id, folder('Técnico').id).folderId).toBe(folder('Técnico').id)
+  })
+
+  it('lets it go when nobody else sees it, and says where it came from for the log', async () => {
+    mkdirSync(join(root, 'solo'))
+    const solo = new Docs({ ...deps(), dir: join(root, 'solo', 'documents'), indexPath: join(root, 'solo', 'docs.db'), people: () => [ana] })
+    solo.init()
+    await solo.loaded
+    try {
+      const from = solo.tree(ana).folders.find((f) => f.name === 'Financeiro')!
+      const doc = await solo.add(ana, { folderId: from.id, name: 'a.md', data: Buffer.from('um') })
+      const moved = solo.move(ana, doc.id, personalOf(ana, solo).id)
+      expect(moved.folderId).toBe(personalOf(ana, solo).id)
+      expect(solo.takenToPersonal(doc, moved)).toEqual({ name: 'a.md', folder: 'Financeiro' })
+      // Back to the team's folder is no taking: nothing for the log.
+      const back = solo.move(ana, doc.id, from.id)
+      expect(solo.takenToPersonal(moved, back)).toBeNull()
+    } finally {
+      solo.close()
+    }
+  })
+
+  it("moves freely inside one's own personal folders", async () => {
+    const mine = personalOf(maria)
+    const inner = docs.saveFolder(maria, { parentId: mine.id, name: 'Rascunhos', rule: '' })
+    const doc = await docs.add(maria, { folderId: mine.id, name: 'diario.md', data: Buffer.from('só meu') })
+    const moved = docs.move(maria, doc.id, inner.id)
+    expect(moved.folderId).toBe(inner.id)
+    expect(docs.takenToPersonal(doc, moved)).toBeNull()
+  })
+})
+
 describe('changing folders', () => {
   it('lets a member who may edit a folder make a subfolder in it that follows its access, and rename it', () => {
     share('Financeiro', { maria: 'edit' })
@@ -356,6 +463,63 @@ describe('changing folders', () => {
   })
 })
 
+// The wiki is the whole team's, and every agent's that reads it: a document goes there from where it is
+// kept, with no second upload, and only when every person of the workspace sees it.
+describe('on the way to the wiki', () => {
+  const wide = (name: string): void => {
+    const f = folder(name)
+    docs.saveFolder(ana, { id: f.id, parentId: f.parentId, name: f.name, rule: f.rule, access: { everyone: 'view', people: {}, sectors: f.access?.sectors ?? {}, agents: {} } })
+  }
+
+  it('says which folders everyone sees, and takes a document only from one of them', async () => {
+    const company = await put(ana, 'Empresa', 'politica.md', 'reembolso em 30 dias')
+    const sector = await put(ana, 'Financeiro', 'contrato.md', 'valor do contrato')
+    expect(docs.tree(ana).forAll).toContain(folder('Empresa').id)
+    expect(docs.tree(ana).forAll).not.toContain(folder('Financeiro').id)
+    const got = docs.forWiki(ana, company.id)
+    expect(got.name).toBe('politica.md')
+    expect(got.data.toString('utf8')).toBe('reembolso em 30 dias')
+    // A member sends it too: they could read it and write it in the wiki by hand.
+    expect(docs.forWiki(maria, company.id).name).toBe('politica.md')
+    expect(await failure(() => docs.forWiki(ana, sector.id))).toBe('Só vai para a wiki um documento que o time todo vê. Este está numa pasta que nem todos veem.')
+  })
+
+  it('follows the folder: opened to everyone it may go, shared with only some it may not', async () => {
+    const doc = await put(ana, 'Financeiro', 'contrato.md', 'valor do contrato')
+    share('Financeiro', { maria: 'view', pedro: 'edit' })
+    expect(await failure(() => docs.forWiki(ana, doc.id))).toContain('nem todos veem') // lia doesn't see it
+    share('Financeiro', { maria: 'view', pedro: 'edit', lia: 'view' })
+    expect(docs.forWiki(ana, doc.id).name).toBe('contrato.md') // every member by name is everyone
+    share('Financeiro', {})
+    wide('Financeiro')
+    expect(docs.forWiki(maria, doc.id).name).toBe('contrato.md')
+    expect(docs.tree(maria).forAll).toContain(folder('Financeiro').id)
+  })
+
+  it("never takes one from a personal folder, a hidden one, the trash, or while it waits for a person's yes", async () => {
+    const mine = docs.tree(maria).folders.find((f) => f.privateTo === 'maria')!
+    const personal = await docs.add(maria, { folderId: mine.id, name: 'diario.md', data: Buffer.from('só meu') })
+    expect(await failure(() => docs.forWiki(maria, personal.id))).toContain('nem todos veem')
+    expect(docs.tree(maria).forAll).not.toContain(mine.id)
+    // Pedro doesn't see Financeiro: for him the document isn't there, whatever he asks of it.
+    const hidden = await put(ana, 'Financeiro', 'contrato.md', 'valor')
+    expect(await failure(() => docs.forWiki(pedro, hidden.id))).toBe(await failure(() => docs.forWiki(pedro, 'nao-existe')))
+    const company = await put(ana, 'Empresa', 'politica.md', 'reembolso')
+    docs.index.putDoc({ ...docs.index.doc(company.id)!, status: 'review' })
+    expect(await failure(() => docs.forWiki(ana, company.id))).toBe('Este documento ainda espera aprovação. Ele vai para a wiki depois de aprovado.')
+    docs.index.putDoc({ ...docs.index.doc(company.id)!, status: null })
+    docs.trash(ana, company.id)
+    expect(await failure(() => docs.forWiki(ana, company.id))).not.toBe('did not fail')
+  })
+
+  it("keeps, in the document's history, who sent it", async () => {
+    const doc = await put(ana, 'Empresa', 'politica.md', 'reembolso')
+    docs.sentToWiki(maria, doc.id)
+    const sent = docs.history(ana, doc.id).events.find((e) => e.action === 'sent-to-wiki')
+    expect(sent?.by).toBe('person:maria')
+  })
+})
+
 describe('versions, names and the trash', () => {
   it('keeps the old bytes readable when a new version comes', async () => {
     const doc = await put(ana, 'Financeiro', 'plano.md', 'versao um')
@@ -382,6 +546,16 @@ describe('versions, names and the trash', () => {
     expect((await docs.text(ana, doc.id)).text).toBe('versao um')
     expect((await docs.text(ana, doc.id, 2)).text).toBe('versao dois')
     await expect(docs.restoreVersion(ana, doc.id, 3)).rejects.toThrow() // it is the current one
+  })
+
+  it('does not name, in the history, a folder the reader cannot see', async () => {
+    share('Financeiro', { maria: 'view' })
+    const doc = await put(ana, 'Financeiro', 'a.md', 'um')
+    docs.move(ana, doc.id, folder('Técnico').id)
+    docs.move(ana, doc.id, folder('Financeiro').id)
+    const moves = (who: Person): string[] => docs.history(who, doc.id).events.filter((e) => e.action === 'moved').map((e) => e.detail).sort()
+    expect(moves(ana)).toEqual(['Financeiro', 'Técnico'])
+    expect(moves(maria)).toEqual(['', 'Financeiro'])
   })
 
   it('lists the versions, newest first, and what happened to the document', async () => {
@@ -438,5 +612,50 @@ describe('versions, names and the trash', () => {
     expect(docs.tree(ana).docs.find((d) => d.id === doc.id)?.trashedAt).toBeNull()
     expect(ids(docs.search(ana, 'zebrinha').map((h) => h.doc))).toEqual([doc.id])
     expect(existsSync(join(docs.root, 'Financeiro', 'a.md'))).toBe(true)
+  })
+
+  it('deletes a trashed document for good: its file, its older versions and every trace in the index', async () => {
+    const doc = await put(ana, 'Financeiro', 'a.md', 'a zebrinha azul')
+    await docs.newVersion(ana, doc.id, { data: Buffer.from('a zebrinha verde') })
+    docs.trash(ana, doc.id)
+    expect(existsSync(join(docs.root, '.trash', doc.id))).toBe(true)
+    expect(existsSync(join(docs.root, '.versions', doc.id))).toBe(true)
+    // What it was called and where it was, for the team's log.
+    expect(docs.purge(adm, doc.id)).toEqual({ name: 'a.md', folder: 'Financeiro' })
+    expect(existsSync(join(docs.root, '.trash', doc.id))).toBe(false)
+    expect(existsSync(join(docs.root, '.versions', doc.id))).toBe(false)
+    expect(docs.index.doc(doc.id)).toBeUndefined()
+    expect(docs.index.versions(doc.id)).toEqual([])
+    expect(docs.index.events(doc.id)).toEqual([])
+    expect(docs.tree(ana).docs.some((d) => d.id === doc.id)).toBe(false)
+    expect(docs.search(ana, 'zebrinha')).toEqual([])
+    // Gone is gone: a second time answers as for a document that never was.
+    expect(await failure(() => docs.purge(ana, doc.id))).toBe(await failure(() => docs.purge(ana, 'nao-existe')))
+  })
+
+  it('deletes for good only from the trash, and in a shared folder only for the owner or an admin', async () => {
+    share('Financeiro', { maria: 'edit' })
+    const doc = await put(maria, 'Financeiro', 'a.md', 'um')
+    expect(await failure(() => docs.purge(ana, doc.id))).toBe('Mande o arquivo para a lixeira antes de apagar de vez.')
+    docs.trash(maria, doc.id)
+    // Maria put it there and may bring it back, but not end it: it was the team's.
+    expect(await failure(() => docs.purge(maria, doc.id))).toBe('Só o dono ou um admin faz isso.')
+    // Pedro doesn't see the folder: for him it answers as a document that isn't there.
+    expect(await failure(() => docs.purge(pedro, doc.id))).toBe(await failure(() => docs.purge(pedro, 'nao-existe')))
+    expect(docs.index.doc(doc.id)).toBeDefined()
+    expect(existsSync(join(docs.root, '.trash', doc.id, 'a.md'))).toBe(true)
+    docs.restore(maria, doc.id)
+    expect(readFileSync(join(docs.root, 'Financeiro', 'a.md'), 'utf8')).toBe('um')
+  })
+
+  it("lets a person delete for good what is in their own personal folder, and says nothing of it to the team's log", async () => {
+    const mine = docs.tree(maria).folders.find((f) => f.privateTo === 'maria')!
+    const doc = await docs.add(maria, { folderId: mine.id, name: 'diario.md', data: Buffer.from('só meu') })
+    docs.trash(maria, doc.id)
+    // Not even the owner reaches a personal folder.
+    expect(await failure(() => docs.purge(ana, doc.id))).toBe(await failure(() => docs.purge(ana, 'nao-existe')))
+    expect(docs.purge(maria, doc.id)).toBeNull()
+    expect(docs.index.doc(doc.id)).toBeUndefined()
+    expect(existsSync(join(docs.root, '.trash', doc.id))).toBe(false)
   })
 })

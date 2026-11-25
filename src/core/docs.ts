@@ -7,8 +7,8 @@
 // see a document it says it does not exist, as it would for one that doesn't.
 import { mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { agentFolderIds, cleanFolderAccess, personMay, visibleFolderIds, type Requester } from '../shared/doc-access'
-import { actorOfAgent, actorOfPerson, docKind, folderPathWithin, type Doc, type DocEvent, type DocFolder, type DocHit, type DocKind, type DocLevel, type DocOrigin, type DocsTree, type DocVersion, type FolderAccess } from '../shared/docs'
+import { agentFolderIds, cleanFolderAccess, effectiveAccess, personMay, seenByAll, visibleFolderIds, type Requester } from '../shared/doc-access'
+import { actorOfAgent, actorOfPerson, docKind, folderPath, folderPathWithin, type Doc, type DocEvent, type DocFolder, type DocHit, type DocKind, type DocLevel, type DocOrigin, type DocsTree, type DocVersion, type FolderAccess } from '../shared/docs'
 import { UserError } from '../shared/errors'
 import { L } from '../shared/lang'
 import type { Agent, Person } from '../shared/types'
@@ -101,7 +101,8 @@ export class Docs extends DocsFiling {
     for (const f of mine) can[f.id] = personMay(person, folders, f.id, 'edit') ? 'edit' : 'view'
     const docs = this.index.docs().filter((d) => seen.has(d.folderId))
     const live = new Set(docs.filter((d) => !d.trashedAt).map((d) => d.id))
-    return { folders: mine, docs, dates: this.index.liveDates().filter((d) => live.has(d.docId)), can }
+    const people = this.deps.people()
+    return { folders: mine, docs, dates: this.index.liveDates().filter((d) => live.has(d.docId)), can, forAll: mine.filter((f) => seenByAll(people, folders, f.id)).map((f) => f.id) }
   }
 
   // Makes a folder (no `id`) or changes one. `access`: left out keeps it; null makes it follow its parent. Only an owner or
@@ -214,9 +215,39 @@ export class Docs extends DocsFiling {
     const d = this.docFor(person, docId, 'edit')
     if (d.trashedAt) throw trashed()
     this.folderFor(person, folderId, 'edit')
+    this.notTakenFromOthers(d, folderId)
     const next = this.moveDoc(d, folderId, name, actorOfPerson(person.id))
     this.deps.emit()
     return next
+  }
+  // A personal folder is its person's alone: not the owner's, not an admin's. So a document someone else
+  // sees can't be moved into one, by whoever edits it: it would be gone for the others, with no one left to
+  // bring it back (and gone for good with its person, if they leave). First its folder is narrowed to that
+  // one person, by whoever decides who sees it; then it may go. Inside one's own personal folders, freely.
+  private notTakenFromOthers(d: Doc, toFolderId: string): void {
+    const folders = this.index.folders()
+    const whose = effectiveAccess(folders, toFolderId).privateTo
+    if (!whose || effectiveAccess(folders, d.folderId).privateTo === whose) return
+    if (this.deps.people().some((p) => p.id !== whose && personMay(p, folders, d.folderId, 'view')))
+      throw new UserError(L('Outras pessoas veem este documento, então ele não vai para uma pasta pessoal. Antes, o dono ou um admin deixa a pasta dele só para você.', 'Other people see this document, so it does not go to a personal folder. First the owner or an admin makes its folder yours alone.'))
+  }
+  // For the team's log (src/core/index.ts), read before a change: a document as the index has it, a
+  // folder's own access, and a folder's path in words. Nothing here is given to a person as it is.
+  peek(docId: string): Doc | undefined {
+    return this.ready ? this.index.doc(docId) : undefined
+  }
+  folderAccess(folderId: string): FolderAccess | null | undefined {
+    return this.ready ? this.index.folders().find((f) => f.id === folderId)?.access : undefined
+  }
+  folderName(folderId: string): string {
+    return this.ready ? folderPath(this.index.folders(), folderId).join(' › ') : ''
+  }
+  // Where a document came from, when it was just moved out of the team's folders into a personal one:
+  // for the team's log, since from there on only its person reads its history. Null for any other move.
+  takenToPersonal(before: Doc, after: Doc): { name: string; folder: string } | null {
+    const folders = this.index.folders()
+    if (!effectiveAccess(folders, after.folderId).privateTo || effectiveAccess(folders, before.folderId).privateTo) return null
+    return { name: before.name, folder: folderPath(folders, before.folderId).join(' › ') }
   }
   rename(person: Person, docId: string, name: string): Doc {
     this.need()
@@ -239,6 +270,21 @@ export class Docs extends DocsFiling {
     return next
   }
 
+  // Out of the trash, for good: the file, its older versions and what the index kept of it. It can't be
+  // undone, so in a shared folder it is the owner's or an admin's; in a personal folder, its person's.
+  // Gives back what it was called and where it was, for the team's log: nothing, for a personal folder.
+  purge(person: Person, docId: string): { name: string; folder: string } | null {
+    this.need()
+    const d = this.docFor(person, docId, 'edit')
+    if (!d.trashedAt) throw new UserError(L('Mande o arquivo para a lixeira antes de apagar de vez.', 'Send the file to the trash before deleting it for good.'))
+    const folders = this.index.folders()
+    const personal = this.privateOf(folders, d.folderId)
+    if (!personal && !isAdmin(person)) throw onlyAdmin()
+    this.purgeDoc(d)
+    this.deps.emit()
+    return personal ? null : { name: d.name, folder: folderPath(folders, d.folderId).join(' › ') }
+  }
+
   // What the file says, as text, for the viewer (`version`: an older one).
   async text(person: Person, docId: string, version?: number): Promise<{ text: string }> {
     this.need()
@@ -252,7 +298,32 @@ export class Docs extends DocsFiling {
   history(person: Person, docId: string): { versions: DocVersion[]; events: DocEvent[] } {
     this.need()
     this.docFor(person, docId)
-    return { versions: this.index.versions(docId), events: this.index.events(docId) }
+    // Where it was moved or put away is said only when the reader sees that folder: a name is enough
+    // to say a folder is there, and whoever reads this document may not see the place it once passed through.
+    const folders = this.index.folders()
+    const seen = new Set([...visibleFolderIds(person, folders)].map((id) => folderPath(folders, id).join(' › ')))
+    const events = this.index.events(docId).map((e) => ((e.action === 'moved' || e.action === 'filed') && e.detail && !seen.has(e.detail) ? { ...e, detail: '' } : e))
+    return { versions: this.index.versions(docId), events }
+  }
+
+  // A document on its way to the wiki: its name and its bytes, when it may go. The wiki is the whole team's
+  // (and every agent's that reads it), so only what every person of the workspace sees goes there, and
+  // nothing that still waits for a person's yes: the version that counts is the approved one.
+  forWiki(person: Person, docId: string): { name: string; data: Buffer } {
+    this.need()
+    const d = this.docFor(person, docId)
+    if (d.trashedAt) throw trashed()
+    if (!seenByAll(this.deps.people(), this.index.folders(), d.folderId))
+      throw new UserError(L('Só vai para a wiki um documento que o time todo vê. Este está numa pasta que nem todos veem.', "Only a document the whole team sees goes to the wiki. This one is in a folder not everyone sees."))
+    if (d.status === 'review' || d.status === 'draft')
+      throw new UserError(L('Este documento ainda espera aprovação. Ele vai para a wiki depois de aprovado.', 'This document is still waiting for approval. It goes to the wiki once approved.'))
+    return { name: d.name, data: this.bytes(d) }
+  }
+  // It went: said in the document's history, with who sent it.
+  sentToWiki(person: Person, docId: string): void {
+    if (!this.ready || !this.index.doc(docId)) return
+    this.index.addEvent({ docId, at: Date.now(), by: actorOfPerson(person.id), action: 'sent-to-wiki', detail: '' })
+    this.deps.emit()
   }
 
   // Goes back to an older version: its bytes become a new version (nothing is lost).
@@ -462,6 +533,7 @@ export class Docs extends DocsFiling {
     if (!d) throw gone()
     const to = this.resolveFolder(folder, ids, folders, readable)
     if (!to) throw noFolder()
+    this.notTakenFromOthers(d, to.id) // an agent working for someone takes nothing into that person's folder that they couldn't
     const next = this.moveDoc(d, to.id, name, actorOfAgent(agent.id))
     this.deps.emit()
     return { ...next, path: this.pathIn(folders, next, readable) }

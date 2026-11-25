@@ -2,7 +2,7 @@
 // Drop files anywhere on it to keep them here.
 import { useRef, useState, type ReactNode } from 'react'
 import { L } from '../../../../shared/lang'
-import { approvalNeeded } from '../../../../shared/doc-access'
+import { approvalNeeded, effectiveAccess } from '../../../../shared/doc-access'
 import type { DocFolder, DocsTree } from '../../../../shared/docs'
 import { call } from '../../rpc'
 import { amAdmin, navigate, toast, useStore } from '../../store'
@@ -40,7 +40,7 @@ export function DocFolderView({ tree, folder, words, upload }: { tree: DocsTree;
 
   const keep = (list: File[]): void => {
     if (!may) return toast(L('Você só pode ler esta pasta.', 'You can only read this folder.'))
-    if (list.length) void upload.send(folder.id, folder.name, list)
+    if (list.length) void upload.send(folder.id, folder.name, list, tree.forAll.includes(folder.id))
   }
   // The page never opens a dropped file itself, even when the person can only read here.
   const drop = {
@@ -206,7 +206,7 @@ export function DocFolderView({ tree, folder, words, upload }: { tree: DocsTree;
           )
         )}
 
-        {!search && <DocTrash docs={docsIn(tree, folder.id, true)} may={may} />}
+        {!search && <DocTrash docs={docsIn(tree, folder.id, true)} may={may} forGood={admin || !!effectiveAccess(tree.folders, folder.id).privateTo} />}
       </div>
 
       {dropping > 0 && (

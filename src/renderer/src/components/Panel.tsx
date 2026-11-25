@@ -68,6 +68,12 @@ export function ArtifactCard({ id }: { id: string }): ReactNode {
             {KIND_LABEL()[a.kind]} · {a.name} · {bytes(a.size)}
             {kept && ` · ${L('Guardado em', 'Kept in')} ${(tree && pathText(tree, kept.folderId)) || 'Documentos'}`}
           </span>
+          {kept && (
+            // On its own line: at the end of the line above it was the first thing a narrow chat cut off.
+            <span className="small artifact-card__kept">
+              <Icon name="check" size={12} /> {L('Guardado em', 'Kept in')} {(tree && pathText(tree, kept.folderId)) || 'Documentos'}
+            </span>
+          )}
         </span>
       </button>
       {!onlySave && (
@@ -472,6 +478,7 @@ function ArtifactView({ artifact }: { artifact: Artifact }): ReactNode {
       size={artifact.size}
       loadText={() => call('artifactText', { id: artifact.id })}
       fallback={
+        // On a server the file isn't on this computer: it comes down instead of showing in a folder.
         windowless() ? (
           <button className="btn btn--sm btn--primary side-panel__reveal" onClick={() => saveArtifact(artifact)}>
             <Icon name="down" size={14} /> {L('Baixar', 'Download')}

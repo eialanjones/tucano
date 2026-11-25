@@ -394,6 +394,9 @@ export class People {
         return { type: 'inbox', inbox: this.inbox(person) }
       case 'delegations':
         return { type: 'delegations', delegations: this.delegations(person) }
+      // What each one let the Tuca do himself: their own.
+      case 'leaves':
+        return { type: 'leaves', leaves: this.db.tucaLeaves(person.id) }
       // One's own to-dos: theirs alone.
       case 'tasks':
         return event.for === person.id ? event : undefined
@@ -549,13 +552,13 @@ export class People {
     // Asked to them and answered a moment ago by someone else (an admin, whoever covers for them).
     const answered = this.db.answeredQuestions(now - ANSWERED_SHOWN_MS).filter((q) => q.askedTo === person.id && q.answeredBy !== person.id).map(shown)
     const proposals = isAdmin(person) ? this.forwardedProposals() : []
+    const harness = this.harnessNotices(person)
     // Documents never break the inbox: if Documentos can't say, they are left out.
     let docs: { documents: InboxDoc[]; docDates: InboxDocDate[] } | undefined
     try {
       docs = this.docsInbox?.(person)
     } catch {}
-    const harness = this.harnessNotices(person)
-    return { approvals, questions, ...(answered.length ? { answered } : {}), ...(proposals.length ? { proposals } : {}), ...(docs?.documents.length ? { documents: docs.documents } : {}), ...(docs?.docDates.length ? { docDates: docs.docDates } : {}), ...(harness.length ? { harness } : {}) }
+    return { approvals, questions, ...(answered.length ? { answered } : {}), ...(proposals.length ? { proposals } : {}), ...(harness.length ? { harness } : {}), ...(docs?.documents.length ? { documents: docs.documents } : {}), ...(docs?.docDates.length ? { docDates: docs.docDates } : {}) }
   }
 
   // What this person's harnesses changed over MCP since they last looked: one line per harness,
@@ -605,7 +608,7 @@ export class People {
   }
 
   // The snapshot as this person gets it: no one else's DMs, their messages or their memories.
-  snapshotFor(person: Person, base: Omit<Snapshot, 'people' | 'former' | 'you' | 'needsName' | 'conversations' | 'inbox' | 'delegations'>, opts: { server?: boolean } = {}): Snapshot {
+  snapshotFor(person: Person, base: Omit<Snapshot, 'people' | 'former' | 'you' | 'needsName' | 'conversations' | 'inbox' | 'delegations' | 'leaves'>, opts: { server?: boolean } = {}): Snapshot {
     const conversations = viewedConversations(this.db, person, this.db.conversations(person.id).filter((c) => this.canSeeConversation(person, c)))
     const seen = new Set(conversations.map((c) => c.id))
     const theirs = base.messages.filter((m) => seen.has(m.conversationId))
@@ -634,6 +637,7 @@ export class People {
       you: person.id,
       inbox: this.inbox(person),
       delegations: this.delegations(person),
+      leaves: this.db.tucaLeaves(person.id),
       ...(opts.server && person.role === 'owner' && !this.db.ownerNamed() ? { needsName: true } : {})
     }
   }

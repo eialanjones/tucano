@@ -7,7 +7,7 @@ import type { BackupSummary, WikiChange, WikiGitSetup, WikiGitStatus, WikiGitTes
 import type { Doc, DocAnswer, DocEvent, DocFolder, DocHit, DocsTree, DocVersion, FolderAccess } from './docs'
 import type { AppProvider, CatalogCategory, CatalogView, OwnAppGuide } from './connector-catalog'
 import type { Connectable, HarnessConnect, HarnessKey, HarnessLevel, McpInfo } from './harness-keys'
-import type { Task, TaskInput, Os, Account, AccountEngine, ActivityEntry, Delegation, Device, Inbox, Agent, BrowserInput, Approval, Artifact, ImageUpload, FileUpload, BrowserView, ComputerInfo, Connector, ConnectorInput, ConnectorTool, HarnessMcp, Conversation, EngineId, Invite, Memory, Person, PersonAccess, Role, MemoryScope, Message, Routine, RoutineInput, Schedule, Report, Settings, SetupState, LoginKey, LoginScreen, LocalSkill, Skill, SkillInput, SkillVersion, Trigger, UsageReport, LocalInfo, VoiceModelId, VoiceStatus, ProposalsResult, AgentApp } from './types'
+import type { TucaLeave, Schedule, Task, TaskInput, Os, Account, AccountEngine, ActivityEntry, Delegation, Device, Inbox, Agent, BrowserInput, Approval, Artifact, ImageUpload, FileUpload, BrowserView, ComputerInfo, Connector, ConnectorInput, ConnectorTool, HarnessMcp, Conversation, EngineId, Invite, Memory, Person, PersonAccess, Role, MemoryScope, Message, Routine, RoutineInput, Report, Settings, SetupState, LoginKey, LoginScreen, LocalSkill, Skill, SkillInput, SkillVersion, Trigger, UsageReport, LocalInfo, VoiceModelId, VoiceStatus, ProposalsResult, AgentApp } from './types'
 import type { EnvPair, KeyRequestAnswer, VaultKey, VaultKeyInput, VaultLogin, VaultLoginInput, VaultUse } from './vault'
 
 export interface Snapshot {
@@ -36,6 +36,7 @@ export interface Snapshot {
   needsName?: boolean // a server's first access: the owner hasn't said their name yet (setMyName)
   inbox: Inbox // what waits on this person: approvals they can decide, questions to them
   delegations?: Delegation[] // work handed down the tree (src/shared/org.ts) that is open, or ended in the last day, in channels this person sees
+  leaves?: TucaLeave[] // what this person let the Tuca do himself (src/core/tuca-leave.ts)
 }
 
 export interface Api {
@@ -68,7 +69,8 @@ export interface Api {
   startTask(p: { id: string }): { conversationId: string } // posts it as my message to its agent (its DM, or the channel set) and takes it off the list
   acceptTask(p: { id: string }): Task // a task an agent suggested goes on my list; throws when it's gone
   repeatTask(p: { id: string; schedule: Schedule | null }): Task // a routine works on it at those times until it's done (it needs an agent); null takes the routine away and puts it back in the list
-  ensureTuca(p: { modelId?: string; fresh?: boolean }): { agentId: string; conversationId: string } // the agent behind the builder screen, with this person's conversation with him, as it was; fresh starts a new one ("Nova conversa")
+  ensureTuca(p: { modelId?: string; fresh?: boolean }): { agentId: string; conversationId: string } // the Tuca, with this person's conversation with him that was last talked in; fresh starts another ("Nova conversa") and keeps the rest
+  setConversationTitle(p: { id: string; title: string }): void // names one of my conversations with the Tuca; '': back to what I first asked there
   createFromDraft(p: { messageId: string }): { agentId: string; conversationId: string } // the agent a Tuca card proposed
   applyProposal(p: { messageId: string; index?: number }): { id: string } // what a Tuca card proposed changing: the agent, routine or channel it touched; index: which of the reply's cards (unset: the first)
   dismissProposal(p: { messageId: string; index?: number }): void
@@ -110,6 +112,7 @@ export interface Api {
   removeConnector(p: { id: string }): void
   reconnectConnector(p: { id: string }): void
   setConnectorToken(p: { id: string; token: string }): Promise<void>
+  setConnectorIcon(p: { id: string; icon: string }): Promise<void> // the picture it wears; empty goes back
   connectorCatalog(): { categories: { id: CatalogCategory; name: string }[]; entries: CatalogView[]; added: string[] } // the store, as data (the phone); added: the entries already connected
   addCatalogConnector(p: { id: string; values?: Record<string, string> }): Promise<string> // a store entry, with what it asks, filled in by the core
   ownAppGuide(p: { provider: AppProvider }): Promise<{ guide: OwnAppGuide; clientId?: string }> // the steps to make one's own Google or Slack app (the phone)
@@ -237,9 +240,11 @@ export interface Api {
   docRename(p: { id: string; name: string }): Doc
   docTrash(p: { id: string }): Doc
   docRestore(p: { id: string }): Doc
+  docPurge(p: { id: string }): void // out of the trash, for good: the owner's or an admin's (in a personal folder, its person's)
   docText(p: { id: string; version?: number }): Promise<{ text: string }> // what the file says, for the viewer (the file itself is served at docUrl)
   docHistory(p: { id: string }): { versions: DocVersion[]; events: DocEvent[] }
   docRestoreVersion(p: { id: string; n: number }): Promise<Doc> // an older version's bytes become a new version
+  docToWiki(p: { id: string }): Promise<WikiSource> // the curator reads it into the wiki's pages, as a file dropped there; only from a folder everyone sees
   docSearch(p: { q: string; folderId?: string }): DocHit[]
   docByArtifact(): Record<string, { docId: string; folderId: string }> // artifacts kept as documents, for "Guardado em…" in the chat
   docDecide(p: { id: string; ok: boolean; note?: string; version?: number }): Promise<Doc> // approves what waits, or asks for changes (note required); the agent that made it is told
@@ -291,6 +296,7 @@ export interface Api {
   activity(p: { personId?: string; kind?: string; before?: number }): ActivityEntry[] // admins: newest first, a page at a time (before: the last page's oldest `at`)
   inbox(): Inbox
   answerQuestion(p: { id: string; text: string }): void // a question an agent asked me (or someone I cover for)
+  removeTucaLeave(p: { id: string }): void // takes back something I let the Tuca do himself
   confirmQuestion(p: { id: string; ok: boolean }): void // in my DM: may the agent ask that person?
   answerDecision(p: { messageId: string; index: number; answer: Answer | null }): void // one of a question's decisions answered on the card (null clears it), kept until sent
   submitDecisions(p: { messageId: string }): void // sends the decisions answered on the card, as my message
@@ -347,9 +353,10 @@ export type CoreEvent =
   | { type: 'people'; people: Person[]; former?: Pick<Person, 'id' | 'name'>[] } // someone joined, left or changed their name
   | { type: 'inbox'; inbox?: Inbox } // what waits on this person changed (each gets their own)
   | { type: 'delegations'; delegations?: Delegation[] } // work handed down the tree changed (each gets what they may see)
+  | { type: 'leaves'; leaves?: TucaLeave[] } // what a person let the Tuca do himself changed (each gets their own)
 
 // Every kind of event, so a test can go through them all (people.ts's eventFor decides each one's audience).
-export const CORE_EVENT_TYPES = ['voice', 'node', 'tasks', 'message', 'delta', 'thinking', 'agent', 'agent_removed', 'conversation', 'settings', 'connector', 'connector_removed', 'approval', 'memory', 'memory_removed', 'computer', 'browser', 'browser_frame', 'artifact', 'routine', 'routine_removed', 'conversation_removed', 'skill', 'skill_removed', 'wiki', 'docs', 'people', 'inbox', 'delegations'] as const satisfies readonly CoreEvent['type'][]
+export const CORE_EVENT_TYPES = ['voice', 'node', 'tasks', 'message', 'delta', 'thinking', 'agent', 'agent_removed', 'conversation', 'settings', 'connector', 'connector_removed', 'approval', 'memory', 'memory_removed', 'computer', 'browser', 'browser_frame', 'artifact', 'routine', 'routine_removed', 'conversation_removed', 'skill', 'skill_removed', 'wiki', 'docs', 'people', 'inbox', 'delegations', 'leaves'] as const satisfies readonly CoreEvent['type'][]
 // …and none left out: a new kind of event fails to compile here until it's listed.
 type _AllListed = Exclude<CoreEvent['type'], (typeof CORE_EVENT_TYPES)[number]> extends never ? true : never
 export const _allEventsListed: _AllListed = true
