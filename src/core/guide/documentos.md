@@ -19,7 +19,7 @@ O cadeado ao lado do título diz quem entra. Dono e admin mudam em **Quem entra 
 - **Agentes**: por setor, **Não lê**, **Lê** ou **Lê e guarda**. **Todos os agentes** vale também para os criados depois.
 - **Usar o mesmo acesso da pasta de cima**: a subpasta segue a de cima.
 
-Quem fica de fora não acha o arquivo, nem pela busca, e o agente dessa pessoa também não lê. Um agente que trabalha para alguém lê só o que ele **e** a pessoa podem. Dono e admin veem tudo, exceto a pasta pessoal de outra pessoa.
+Quem fica de fora não acha o arquivo, nem pela busca, e o agente dessa pessoa também não lê. Um agente que trabalha para alguém lê só o que ele **e** a pessoa podem. Dono e admin veem tudo, exceto a pasta pessoal de outra pessoa. Por isso um arquivo que mais alguém vê não vai para **Só meus**: antes, dono ou admin deixa a pasta dele só para aquela pessoa. Mudar quem vê uma pasta e levar um arquivo para a pasta pessoal ficam em Configurações › Atividade.
 
 ## Mostrar é da conversa, guardar é do time
 Um arquivo que o agente mostra na conversa não é guardado sozinho. No painel dele, **Guardar em Documentos** escolhe a pasta e vira a versão 1. Depois aparecem **Guardado** e **Abrir em Documentos**.
@@ -30,9 +30,12 @@ Para o agente guardar direto, peça na conversa: "guarda isso na pasta Relatóri
 Cada novo guardar vira uma versão, com anotação. Em **Versões**, **Ver** mostra uma antiga sem mudar nada; **Voltar para esta** cria uma versão nova com o conteúdo dela.
 
 ## Lixeira
-**Mandar para a lixeira** tira o arquivo da lista e da busca; **Desfazer** na hora. No fim de cada pasta, **Lixeira** lista o que foi e traz **Restaurar**.
+**Mandar para a lixeira** tira o arquivo da lista e da busca; **Desfazer** na hora. No fim de cada pasta, **Lixeira** lista o que foi e traz **Restaurar**. **Apagar de vez** tira o arquivo e as versões dele do Tucano, sem volta: é do dono ou de um admin (numa pasta pessoal, da própria pessoa) e fica em Configurações › Atividade.
 
 ## O que entra
 PDF, Word (.docx), planilha (.xlsx, .csv), texto (.txt, .md, .json), página (.html) e imagem (png, jpg, gif, webp), até 20 MB. **Não entram** vídeo, áudio nem arquivo compactado. Word e Excel aparecem como texto; **Baixar** traz o original.
+
+## Mandar para a Wiki
+Depois de enviar um arquivo, o aviso traz **Mandar para a Wiki**; a mesma opção fica no **⋯** de cada arquivo. O curador lê o arquivo e escreve nas páginas, sem você enviar de novo. Só vale para arquivo numa pasta que o time todo vê, e depois de aprovado quando a pasta pede aprovação.
 
 Aprovação, rascunho, documento vivo, Chegada, prazos e perguntas aos documentos estão na página **documentos-aprovacao**.

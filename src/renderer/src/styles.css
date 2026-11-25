@@ -860,6 +860,15 @@ h3 {
   width: 20px;
   height: 20px;
 }
+.icon-btn:disabled {
+  color: var(--text-3);
+  opacity: 0.4;
+  cursor: default;
+}
+.icon-btn:disabled:hover {
+  background: none;
+  color: var(--text-3);
+}
 
 /* ---------- avatars ---------- */
 .avatar {
@@ -3710,7 +3719,9 @@ h3 {
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: 560px;
+  /* Never wider than the chat it is in: a long file name is cut with "…", it doesn't push the card under the panel. */
+  max-width: min(560px, 100%);
+  min-width: 0;
   margin-top: 8px;
   padding: 8px 12px;
   border: 1px solid var(--border);
@@ -3750,7 +3761,19 @@ h3 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.artifact-card__text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.artifact-card__text .artifact-card__kept {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ok);
+}
 .artifact-card__open {
+  flex-shrink: 0;
   font-size: 12px;
   color: var(--accent);
   flex-shrink: 0;
@@ -5944,6 +5967,7 @@ table.csv th {
   flex-wrap: wrap;
   gap: 8px;
   width: 100%;
+  min-width: 0;
 }
 .model-picker select {
   flex: 0 0 auto;
@@ -6040,6 +6064,8 @@ table.csv th {
 .modal__card {
   width: min(460px, calc(100vw - 32px));
   max-height: calc(100vh - 80px);
+  max-height: calc(100dvh - 80px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 18px 20px;
@@ -6047,6 +6073,9 @@ table.csv th {
   background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
+}
+.modal__card > :is(.modal__head, .modal__foot, textarea) {
+  flex-shrink: 0;
 }
 .modal__head {
   display: flex;
@@ -6544,13 +6573,18 @@ table.csv th {
 }
 .search {
   width: min(560px, calc(100vw - 32px));
+  max-height: calc(86vh - 16px);
+  max-height: calc(100dvh - 14vh - 16px);
+  display: flex;
+  flex-direction: column;
   border-radius: 14px;
   background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
-  overflow: hidden;
+  overflow-y: auto;
 }
 .search__input {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -6580,6 +6614,7 @@ kbd {
   color: var(--text-3);
 }
 .search__list {
+  min-height: 0;
   max-height: 380px;
   overflow-y: auto;
   padding: 6px;
@@ -8533,6 +8568,7 @@ kbd {
 .form-modal {
   width: min(680px, calc(100vw - 48px));
   max-height: calc(100vh - 64px);
+  max-height: calc(100dvh - 64px);
   overflow-y: auto;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
@@ -8808,6 +8844,7 @@ kbd {
   width: min(620px, calc(100vw - 32px));
 }
 .skill-add__list {
+  min-height: 0;
   max-height: min(460px, 56vh);
   overflow-y: auto;
   padding: 6px;
@@ -9695,10 +9732,10 @@ button.wk-pill.is-on { box-shadow: 0 0 0 1.5px var(--k); background: color-mix(i
 
 /* search */
 .wk-palette-back { align-items: flex-start; padding-top: 12vh; }
-.wk-palette { width: min(640px, 92vw); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow-lg), 0 0 0 1px var(--border); overflow: hidden; animation: pop var(--dur-base) var(--ease-out) both; }
-.wk-palette__input { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border); color: var(--text-3); }
+.wk-palette { width: min(640px, 92vw); max-height: calc(88vh - 16px); max-height: calc(100dvh - 12vh - 16px); display: flex; flex-direction: column; border-radius: 16px; background: var(--panel); box-shadow: var(--shadow-lg), 0 0 0 1px var(--border); overflow: hidden; animation: pop var(--dur-base) var(--ease-out) both; }
+.wk-palette__input { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border); color: var(--text-3); }
 .wk-palette__input input, .wk-palette__input input:focus { flex: 1; border: 0; outline: 0; box-shadow: none; padding: 0; background: transparent; font: inherit; font-size: 17px; color: var(--text); }
-.wk-palette__list { max-height: 56vh; overflow-y: auto; padding: 8px; }
+.wk-palette__list { min-height: 0; max-height: 56vh; overflow-y: auto; padding: 8px; }
 .wk-palette__label { padding: 6px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
 .wk-palette__row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 10px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .wk-palette__row.is-on { background: var(--active); }
@@ -10194,6 +10231,7 @@ button.wk-pill.is-on { box-shadow: 0 0 0 1.5px var(--k); background: color-mix(i
 .modal__card.google-setup {
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   overflow-y: auto;
 }
 .google-setup__steps {
@@ -10222,6 +10260,27 @@ button.wk-pill.is-on { box-shadow: 0 0 0 1.5px var(--k); background: color-mix(i
   height: 36px;
   background: var(--bg);
   color: var(--text-2);
+}
+/* A connector's own picture: shown whole, whatever its shape, on the tile's own surface. */
+.catalog__logo--pic {
+  overflow: hidden;
+  background: var(--panel);
+}
+.catalog__logo--pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+/* The picture and the two buttons that change it, under the connector's state and address. */
+.connector-modal__icon {
+  gap: 8px;
+  margin-bottom: 10px;
+}
+/* The same tile in the steps that pick a connector: it brings its own surface, so the circle goes. */
+.onb-power-row__icon--tile {
+  width: auto;
+  height: auto;
+  background: none;
 }
 .catalog__state {
   display: flex;
@@ -14083,7 +14142,7 @@ button.agent-card__now:hover {
 }
 
 /* ---------- What a person sees (PersonAccess.tsx) ---------- */
-.modal__card.access-dialog { width: min(580px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; }
+.modal__card.access-dialog { width: min(580px, calc(100vw - 32px)); max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow-y: auto; }
 .access { display: flex; flex-direction: column; gap: 20px; }
 .access :where(button) { border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; background: none; }
 .access-chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 1.5; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
@@ -16249,6 +16308,98 @@ button.agent-card__now:hover {
   font-size: 12.5px;
   color: var(--text-2);
 }
+/* His other conversations: a small menu by "Nova conversa". */
+.onb-tc__convs {
+  position: relative;
+  flex: none;
+}
+.onb-tc__convs-pop {
+  position: absolute;
+  z-index: 30;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 340px;
+  max-width: calc(100vw - 48px);
+  max-height: 320px;
+  overflow-y: auto;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--border);
+  --pop-y: -6px;
+  animation: pop var(--dur-base) var(--ease-out) both;
+}
+.onb-tc__conv {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.onb-tc__conv:hover,
+.onb-tc__conv:focus-visible {
+  background: var(--hover);
+}
+.onb-tc__conv.is-on {
+  font-weight: 600;
+}
+.onb-tc__conv-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onb-tc__conv-when {
+  flex: none;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-2);
+}
+/* What he was let to do himself: the same popover, a row per leave with its way back. */
+.onb-tc__leaves-note {
+  margin: 0;
+  padding: 6px 10px 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.onb-tc__leave {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.onb-tc__leave-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.onb-tc__leave-kind {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.onb-tc__leave-sub {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.onb-tc__leave .link {
+  flex: none;
+}
 .onb-tc__confirm {
   display: flex;
   align-items: center;
@@ -17669,3 +17820,108 @@ button.agent-card__now:hover {
 .bd .bd-rep .bd-pick button { padding: 6px 12px; }
 .bd-form .bd-rep input[type='time'] { width: auto; }
 .bd-rep-hint { font-size: 12.5px; color: var(--text-3); }
+/* ---------- the Tuca's screen: the team beside his conversation ---------- */
+/* The same card as the proposal: who he passes the requests to. Whoever has a part of the request in
+   hand comes first, with how it stands; the rest are at rest, by what they do. */
+.onb-tc__team-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 28%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.onb-tc__mates {
+  margin: 12px -8px 0;
+  padding: 0;
+  list-style: none;
+}
+.onb-tc__mates > li + li {
+  margin-top: 1px;
+}
+.onb-tc__mate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.onb-tc__mate:hover,
+.onb-tc__mate:focus-visible {
+  background: var(--hover);
+}
+.onb-tc__mate .avatar,
+.onb-tc__mate > svg {
+  flex: none;
+}
+.onb-tc__mate-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.onb-tc__mate-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.onb-tc__mate-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onb-tc__mate-top .request-note__state {
+  flex: none;
+  font-size: 11.5px;
+}
+.onb-tc__mate-sub {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onb-tc__mate.is-asked .onb-tc__mate-sub {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+}
+/* The rest of the team steps back while a request is in hand. */
+.onb-tc__mates:has(.is-asked) .onb-tc__mate:not(.is-asked) {
+  opacity: 0.62;
+}
+.onb-tc__mates:has(.is-asked) .onb-tc__mate:not(.is-asked):hover,
+.onb-tc__mates:has(.is-asked) .onb-tc__mate:not(.is-asked):focus-visible {
+  opacity: 1;
+}
+.onb-tc__team .onb-tc__actions {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.onb-tc__back {
+  display: block;
+  margin: 10px auto 0;
+  font-size: 12.5px;
+}
+/* On his screen the request shows once in the conversation, under his reply: the lines under the
+   person's own message would say the same again, and the team card beside it says how it stands now. */
+.onb-tc .asked-here {
+  display: none;
+}

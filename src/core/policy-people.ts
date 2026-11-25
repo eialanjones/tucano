@@ -184,9 +184,11 @@ export const NEEDS: Record<Method, Need> = {
   docRename: 'anyone',
   docTrash: 'anyone',
   docRestore: 'anyone',
+  docPurge: 'anyone',
   docText: 'anyone',
   docHistory: 'anyone',
   docRestoreVersion: 'anyone',
+  docToWiki: 'anyone',
   docSearch: 'anyone',
   docByArtifact: 'anyone',
   docDecide: 'anyone',
@@ -225,6 +227,8 @@ export const NEEDS: Record<Method, Need> = {
   setDelegation: 'anyone',
   inbox: 'anyone',
   answerQuestion: 'target',
+  removeTucaLeave: 'anyone', // only one's own is found (db.removeTucaLeave)
+  setConversationTitle: 'anyone', // only one's own conversations with the Tuca (checked there)
   confirmQuestion: 'target',
   answerDecision: 'target', // who may answer the question (Runner.decidable)
   submitDecisions: 'target',
@@ -263,6 +267,7 @@ export const NEEDS: Record<Method, Need> = {
   removeConnector: 'admin',
   reconnectConnector: 'admin',
   setConnectorToken: 'admin',
+  setConnectorIcon: 'admin',
   connectorCatalog: 'admin',
   addCatalogConnector: 'admin',
   ownAppGuide: 'admin',
