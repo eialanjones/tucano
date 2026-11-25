@@ -1,10 +1,10 @@
-// The board's tasks seen from the agents' side (`sugerir_tarefa`, `concluir_tarefa`), and the small pieces
+// The board's tasks seen from the agents' side (`sugerir_tarefa`, `criar_tarefa`, `concluir_tarefa`), and the small pieces
 // of task logic the handlers in index.ts share: its text, its state moves, a schedule read defensively.
 import { randomUUID } from 'node:crypto'
 import { L, locale } from '../shared/lang'
 import { UserError } from '../shared/errors'
 import type { CoreEvent } from '../shared/rpc'
-import { MAX_AGENT_SUGGESTIONS, MAX_TASK_NOTES, MAX_TASK_RESULT, MAX_TASK_TITLE, type Agent, type Person, type Routine, type Schedule, type Task, type TaskState } from '../shared/types'
+import { MAX_AGENT_SUGGESTIONS, MAX_AGENT_TASKS, MAX_TASK_NOTES, MAX_TASK_RESULT, MAX_TASK_TITLE, type Agent, type Person, type Routine, type Schedule, type Task, type TaskState } from '../shared/types'
 import type { Db } from './db'
 import type { ToolDef } from './gateway'
 import type { Routines } from './routines'
@@ -32,6 +32,19 @@ export const SUGERIR_TAREFA: ToolDef = {
   }
 }
 
+export const CRIAR_TAREFA: ToolDef = {
+  name: 'criar_tarefa',
+  get description() {
+    return L(
+      'Cria uma tarefa direto na lista “A fazer” do quadro da pessoa com quem você está trabalhando, sem esperar ela aceitar. Use pra trabalho combinado ou claramente necessário; pra uma ideia que ela ainda precisa decidir, use sugerir_tarefa. Criar não começa o trabalho: a pessoa começa a tarefa quando quiser.',
+      'Creates a task straight on the “A fazer” (to do) list of the board of the person you are working with, without waiting for them to accept it. Use it for work that is agreed or clearly needed; for an idea they still have to decide on, use sugerir_tarefa. Creating does not start the work: the person starts the task when they like.'
+    )
+  },
+  get inputSchema() {
+    return SUGERIR_TAREFA.inputSchema
+  }
+}
+
 export const CONCLUIR_TAREFA: ToolDef = {
   name: 'concluir_tarefa',
   get description() {
@@ -49,7 +62,7 @@ export const CONCLUIR_TAREFA: ToolDef = {
   }
 }
 
-export const TASK_TOOL_NAMES = new Set([SUGERIR_TAREFA.name, CONCLUIR_TAREFA.name])
+export const TASK_TOOL_NAMES = new Set([SUGERIR_TAREFA.name, CRIAR_TAREFA.name, CONCLUIR_TAREFA.name])
 
 // A task's text as kept: no control characters but newlines, no longer than `max`.
 export const cleanTaskText = (s: unknown, max: number): string => (typeof s === 'string' ? s.replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').trim().slice(0, max) : '')
@@ -103,20 +116,27 @@ export const topPosition = (tasks: Task[]): number => (tasks.length ? Math.min(.
 
 type ToolOutcome = { reply: string; error?: boolean; task?: Task }
 
-// `sugerir_tarefa`: an agent leaves a task for the person it works for. `pickable`: the team agents that person sees.
-export function suggestTask(db: Db, emit: (e: CoreEvent) => void, agent: Agent, owner: Person, args: Record<string, unknown>, pickable: Agent[], routine?: Routine): ToolOutcome {
-  const fail = (reply: string): ToolOutcome => ({ reply, error: true })
+// What `sugerir_tarefa` and `criar_tarefa` share: a title, who would do it, and no twin already on the board.
+// Returns the outcome to give back instead (an error, or "already there"), or what the task is made of.
+function checkNewTask(db: Db, agent: Agent, owner: Person, args: Record<string, unknown>, pickable: Agent[]): ToolOutcome | { title: string; doer: Agent; mine: Task[] } {
   const title = cleanTaskTitle(args['titulo'])
-  if (!title) return fail(L('Falta o título da tarefa (titulo).', 'The task title (titulo) is missing.'))
+  if (!title) return { reply: L('Falta o título da tarefa (titulo).', 'The task title (titulo) is missing.'), error: true }
   const para = typeof args['para'] === 'string' ? args['para'].trim().replace(/^@/, '').toLowerCase() : ''
   const doer = para ? pickable.find((a) => a.handle.toLowerCase() === para || a.name.trim().toLowerCase() === para) : agent
-  if (!doer) return fail(L(`Não achei "${para}" no time. Quem dá pra escolher: ${pickable.map((a) => `@${a.handle} (${a.name})`).join(', ') || 'ninguém'}.`, `I couldn't find "${para}" on the team. Who can be picked: ${pickable.map((a) => `@${a.handle} (${a.name})`).join(', ') || 'no one'}.`))
+  if (!doer) return { reply: L(`Não achei "${para}" no time. Quem dá pra escolher: ${pickable.map((a) => `@${a.handle} (${a.name})`).join(', ') || 'ninguém'}.`, `I couldn't find "${para}" on the team. Who can be picked: ${pickable.map((a) => `@${a.handle} (${a.name})`).join(', ') || 'no one'}.`), error: true }
   const mine = db.tasks(owner.id)
-  const open = mine.filter((t) => t.state !== 'done')
-  if (open.some((t) => same(t.title) === same(title)))
+  if (mine.some((t) => t.state !== 'done' && same(t.title) === same(title)))
     return { reply: L(`Essa tarefa já está lá (na lista ou entre as sugestões): "${title}". Não criei outra.`, `That task is already there (on the list or among the suggestions): "${title}". I did not create another.`) }
+  return { title, doer, mine }
+}
+
+// `sugerir_tarefa`: an agent leaves a task for the person it works for. `pickable`: the team agents that person sees.
+export function suggestTask(db: Db, emit: (e: CoreEvent) => void, agent: Agent, owner: Person, args: Record<string, unknown>, pickable: Agent[], routine?: Routine): ToolOutcome {
+  const checked = checkNewTask(db, agent, owner, args, pickable)
+  if ('reply' in checked) return checked
+  const { title, doer, mine } = checked
   if (mine.filter((t) => t.suggestedBy === agent.id).length >= MAX_AGENT_SUGGESTIONS)
-    return fail(L(`Você já tem ${MAX_AGENT_SUGGESTIONS} sugestões esperando ${owner.name} decidir. Espere a resposta antes de sugerir mais.`, `You already have ${MAX_AGENT_SUGGESTIONS} suggestions waiting for ${owner.name} to decide. Wait for the answer before suggesting more.`))
+    return { reply: L(`Você já tem ${MAX_AGENT_SUGGESTIONS} sugestões esperando ${owner.name} decidir. Espere a resposta antes de sugerir mais.`, `You already have ${MAX_AGENT_SUGGESTIONS} suggestions waiting for ${owner.name} to decide. Wait for the answer before suggesting more.`), error: true }
   const notes = cleanTaskText(args['detalhes'], MAX_TASK_NOTES)
   const task: Task = { id: randomUUID(), owner: owner.id, title, position: topPosition(mine), createdAt: Date.now(), agentId: doer.id, suggestedBy: agent.id, ...(notes ? { notes } : {}), ...(routine ? { fromRoutine: routine.name } : {}) }
   db.saveTask(task)
@@ -126,6 +146,27 @@ export function suggestTask(db: Db, emit: (e: CoreEvent) => void, agent: Agent, 
     reply: L(
       `Sugeri a tarefa "${title}" (${doer.id === agent.id ? 'pra você' : `pra @${doer.handle}`}). ${owner.name} decide se aceita: não comece esse trabalho agora.`,
       `I suggested the task "${title}" (${doer.id === agent.id ? 'for you' : `for @${doer.handle}`}). ${owner.name} decides whether to accept it: do not start that work now.`
+    )
+  }
+}
+
+// `criar_tarefa`: an agent puts a task straight in "to do" on the board of the person it works for, for them to start when they like.
+export function createTask(db: Db, emit: (e: CoreEvent) => void, agent: Agent, owner: Person, args: Record<string, unknown>, pickable: Agent[], routine?: Routine): ToolOutcome {
+  const checked = checkNewTask(db, agent, owner, args, pickable)
+  if ('reply' in checked) return checked
+  const { title, doer, mine } = checked
+  const made = mine.filter((t) => t.createdBy === agent.id && t.state !== 'done').length
+  if (made >= MAX_AGENT_TASKS)
+    return { reply: L(`Você já tem ${made} tarefas abertas que criou pra ${owner.name}. Espere alguma terminar antes de criar mais.`, `You already have ${made} open tasks you created for ${owner.name}. Wait for some to finish before creating more.`), error: true }
+  const notes = cleanTaskText(args['detalhes'], MAX_TASK_NOTES)
+  const task: Task = { id: randomUUID(), owner: owner.id, title, position: topPosition(mine), createdAt: Date.now(), agentId: doer.id, createdBy: agent.id, ...(notes ? { notes } : {}), ...(routine ? { fromRoutine: routine.name } : {}) }
+  db.saveTask(task)
+  emit({ type: 'tasks', for: owner.id })
+  return {
+    task,
+    reply: L(
+      `Criei a tarefa "${title}" em “A fazer” (${doer.id === agent.id ? 'pra você' : `pra @${doer.handle}`}). ${owner.name} começa quando quiser: não comece esse trabalho agora.`,
+      `I created the task "${title}" in “A fazer” (to do) (${doer.id === agent.id ? 'for you' : `for @${doer.handle}`}). ${owner.name} starts when they like: do not start that work now.`
     )
   }
 }

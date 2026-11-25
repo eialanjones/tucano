@@ -725,6 +725,10 @@ const COLUMNS: [string, string, string][] = [
   ['agents', 'one_at_a_time', 'INTEGER'],
   // What a conversation with the Tuca is about, in a few words: the person has several, one per request.
   ['conversations', 'title', 'TEXT'],
+  // An agent that puts tasks straight on its person's board (Agent.createsTasks): 1; unset, it only suggests them.
+  ['agents', 'creates_tasks', 'INTEGER'],
+  // The agent that put a task straight on the list (Task.createdBy, `criar_tarefa`).
+  ['tasks', 'created_by', 'TEXT'],
   // What became of an approved call: 'done', 'error' or 'not_run' (src/shared/types.ts).
   ['approvals', 'result', 'TEXT'],
   // The picture a connector wears: a small image as a data URL (src/renderer/src/connector-icon.ts).
@@ -1059,7 +1063,8 @@ export class Db {
       ...(r['sector_does'] ? { sectorDoes: str(r['sector_does']) } : {}),
       ...(r['entry'] ? { entry: true as const } : {}),
       ...(r['proactive'] === 0 ? { proactive: false } : {}),
-      ...(r['one_at_a_time'] === 1 ? { oneAtATime: true as const } : {})
+      ...(r['one_at_a_time'] === 1 ? { oneAtATime: true as const } : {}),
+      ...(r['creates_tasks'] === 1 ? { createsTasks: true as const } : {})
     }
   }
 
@@ -1085,7 +1090,7 @@ export class Db {
       .run(a.id, a.name, a.handle, a.role, a.color, a.instructions, a.modelId, a.fallbackModelId || null, a.fallbackAccountId || null, a.accountId || null, a.effort, safeLimit(a.limit), routineCap(a.maxRoutines), JSON.stringify(a.grants), a.memory ?? 'auto', a.computer ? 1 : 0, a.computerKind === 'mac' ? 'mac' : 'linux', a.web === false ? 0 : 1, a.browser ? 1 : 0, JSON.stringify(a.apps ?? []), JSON.stringify(a.autoApprove ?? []), JSON.stringify(cleanRules(a.actionRules)), isAutonomy(a.autonomy) ? a.autonomy : null, a.outsideGuard === undefined ? null : a.outsideGuard ? 1 : 0, a.archived ? 1 : 0, a.kind ?? null, a.customColor ?? null, a.picture ?? null, a.avatar ? JSON.stringify(a.avatar) : null, a.wiki ?? null, Date.now())
     // An agent made without one belongs to the Tucano's owner; a save that doesn't say keeps it.
     this.db.prepare('UPDATE agents SET owner = COALESCE(?, owner, (SELECT id FROM people WHERE role = ?)) WHERE id = ?').run(a.owner ?? null, 'owner', a.id)
-    this.db.prepare('UPDATE agents SET reports_to = ?, sector_name = ?, sector_does = ?, entry = ?, proactive = ?, one_at_a_time = ? WHERE id = ?').run(a.reportsTo || null, a.sectorName || null, a.sectorDoes || null, a.entry ? 1 : null, a.proactive === false ? 0 : null, a.oneAtATime ? 1 : null, a.id)
+    this.db.prepare('UPDATE agents SET reports_to = ?, sector_name = ?, sector_does = ?, entry = ?, proactive = ?, one_at_a_time = ?, creates_tasks = ? WHERE id = ?').run(a.reportsTo || null, a.sectorName || null, a.sectorDoes || null, a.entry ? 1 : null, a.proactive === false ? 0 : null, a.oneAtATime ? 1 : null, a.createsTasks ? 1 : null, a.id)
   }
 
   // Kept apart from saveAgent: folders change only after the core checks them.
@@ -2706,7 +2711,8 @@ export class Db {
       ...(r['result'] ? { result: str(r['result']) } : {}),
       ...(r['suggested_by'] ? { suggestedBy: str(r['suggested_by']) } : {}),
       ...(r['from_routine'] ? { fromRoutine: str(r['from_routine']) } : {}),
-      ...(r['routine_id'] ? { routineId: str(r['routine_id']) } : {})
+      ...(r['routine_id'] ? { routineId: str(r['routine_id']) } : {}),
+      ...(r['created_by'] ? { createdBy: str(r['created_by']) } : {})
     }))
   }
 
@@ -2718,11 +2724,11 @@ export class Db {
   saveTask(t: Task): void {
     this.db
       .prepare(
-        `INSERT INTO tasks (id, owner, title, notes, agent_id, conversation_id, due_at, position, created_at, state, done_at, result, suggested_by, from_routine, routine_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO tasks (id, owner, title, notes, agent_id, conversation_id, due_at, position, created_at, state, done_at, result, suggested_by, from_routine, routine_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET title = excluded.title, notes = excluded.notes, agent_id = excluded.agent_id, conversation_id = excluded.conversation_id, due_at = excluded.due_at, position = excluded.position,
-           state = excluded.state, done_at = excluded.done_at, result = excluded.result, suggested_by = excluded.suggested_by, from_routine = excluded.from_routine, routine_id = excluded.routine_id`
+           state = excluded.state, done_at = excluded.done_at, result = excluded.result, suggested_by = excluded.suggested_by, from_routine = excluded.from_routine, routine_id = excluded.routine_id, created_by = excluded.created_by`
       )
-      .run(t.id, t.owner, t.title, t.notes ?? null, t.agentId ?? null, t.conversationId ?? null, t.dueAt ?? null, t.position, t.createdAt, t.state ?? null, t.doneAt ?? null, t.result ?? null, t.suggestedBy ?? null, t.fromRoutine ?? null, t.routineId ?? null)
+      .run(t.id, t.owner, t.title, t.notes ?? null, t.agentId ?? null, t.conversationId ?? null, t.dueAt ?? null, t.position, t.createdAt, t.state ?? null, t.doneAt ?? null, t.result ?? null, t.suggestedBy ?? null, t.fromRoutine ?? null, t.routineId ?? null, t.createdBy ?? null)
   }
 
   // A task whose routine is gone (deleted, or its conversation or agent was) goes back on the list as it was before

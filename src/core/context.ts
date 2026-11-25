@@ -31,6 +31,7 @@ export type PromptOpts = {
   apps?: AgentApp[] // the person's own apps it may use
   routines?: Routine[] // its own, when it can schedule
   suggests?: boolean // it has sugerir_tarefa: tasks it notices go to the person as suggestions
+  creates?: boolean // it also has criar_tarefa: it may put a task straight on the person's list
   skills?: Skill[] // the active ones it follows, when it has skill tools
   builder?: string // the Tuca's view of the workspace: models, connectors, the team (live)
   team?: string // the agents that answer to this one and what it has asked of them (src/core/delegations.ts, live)
@@ -59,7 +60,7 @@ export interface GitHubAccess {
 // session (Claude Code keeps the first system prompt on resume), so whatever changes on its own
 // goes in liveContext instead.
 export function systemPrompt(opts: PromptOpts): string {
-  const { agent, settings, conversation, peers, canRemember, hasComputer, computerOff, macFolder, web, browser, browserLogins, apps, routines, suggests, skills, connectors, builderGuide, people } = opts
+  const { agent, settings, conversation, peers, canRemember, hasComputer, computerOff, macFolder, web, browser, browserLogins, apps, routines, suggests, creates, skills, connectors, builderGuide, people } = opts
   const me = settings.workspaceName || L('o usuário', 'the user')
   const where =
     conversation.kind === 'dm'
@@ -157,6 +158,11 @@ export function systemPrompt(opts: PromptOpts): string {
         L(
           `- Trabalho que você nota que vale fazer e ninguém pediu (algo quebrado, um próximo passo óbvio) vai pra ${me} como sugestão, com sugerir_tarefa, em vez de você fazer por conta própria. ${me} decide se aceita.`,
           `- Work you notice that is worth doing and nobody asked for (something broken, an obvious next step) goes to ${me} as a suggestion, with sugerir_tarefa, instead of doing it unasked. ${me} decides whether to accept it.`
+        ),
+      creates &&
+        L(
+          `- Você também pode pôr uma tarefa direto na lista “A fazer” de ${me}, com criar_tarefa, quando o trabalho já está combinado ou é claramente necessário. Criar a tarefa não é começar: ${me} começa quando quiser. Na dúvida, sugira.`,
+          `- You can also put a task straight on ${me}'s “A fazer” (to do) list, with criar_tarefa, when the work is already agreed or clearly needed. Creating the task is not starting it: ${me} starts it when they like. When in doubt, suggest.`
         ),
       web &&
         L(

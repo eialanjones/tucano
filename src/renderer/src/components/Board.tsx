@@ -491,6 +491,7 @@ export function BoardPage(): ReactNode {
       <div key={t.id} data-card={`t:${t.id}`} tabIndex={0} className={`bd-card task ${focus === `t:${t.id}` ? 'focus' : ''}`} onPointerDown={(e) => onTaskDown(e, t)} onClick={() => !justDragged.current && openCard(`t:${t.id}`)} aria-label={t.title}>
         <div className="bd-c-top"><Face agent={a} /><span className="nm">{a?.name ?? L('Sem agente', 'No agent')}</span><span className="time">{ago(t.createdAt)}</span></div>
         <div className="bd-c-title">{t.title}</div>
+        {t.createdBy && <div className="bd-made">{L(`Criada por ${agents.get(t.createdBy)?.name ?? 'um agente'}`, `Created by ${agents.get(t.createdBy)?.name ?? 'an agent'}`)}{t.fromRoutine ? L(` · rotina “${t.fromRoutine}”`, ` · routine “${t.fromRoutine}”`) : ''}</div>}
         <div className="bd-c-foot">{t.dueAt ? <span>{L('até', 'by')} {new Date(t.dueAt).toLocaleDateString(locale(), { day: 'numeric', month: 'short' })}</span> : <span>{L('Você', 'You')}</span>}{conv?.kind === 'channel' && <Where conv={conv} />}</div>
         <button className="bd-go" onClick={(e) => void start(t, e.currentTarget)}>{L('Começar', 'Start')} <kbd>S</kbd></button>
       </div>

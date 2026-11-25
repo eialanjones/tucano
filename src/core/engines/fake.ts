@@ -210,6 +210,10 @@ export function fakeEngine(id: Engine['id'], opts: { delayMs?: number; reply?: (
           const ok = textOf(await callTool(turn.mcpUrl, 'ask_user', { question: 'Ok' }))
           reply = [saved, again, ok].join('\n')
         }
+      } else if (turn.mcpUrl && /^(?:crie tarefa|create task)(?: (?:pr[ao]|to) @?([\w-]+))?: ([^\n]+)/i.test(last)) {
+        // "crie tarefa: responder os comentários" (or "crie tarefa pra nina: …"): put straight on the person's list.
+        const [, who, what] = /^(?:crie tarefa|create task)(?: (?:pr[ao]|to) @?([\w-]+))?: ([^\n]+)/i.exec(last)!
+        reply = textOf(await callTool(turn.mcpUrl, 'criar_tarefa', { titulo: what!, ...(who ? { para: who } : {}) }))
       } else if (turn.mcpUrl && /(?:sugira|suggest)(?: (?:pr[ao]|to) @?([\w-]+))?: ([^\n]+)/i.test(last)) {
         // "sugira: responder os comentários" (or "sugira pra nina: …"): work it noticed, left for the person to accept on the board.
         const [, who, what] = /(?:sugira|suggest)(?: (?:pr[ao]|to) @?([\w-]+))?: ([^\n]+)/i.exec(last)!

@@ -810,6 +810,12 @@ export function AgentPage({ id, draft: proposed, fromMessage }: { id?: string; d
               >
                 <Toggle label={L('Uma resposta por vez', 'One reply at a time')} on={draft.oneAtATime === true} onChange={(v) => patch({ oneAtATime: v ? true : undefined }, true)} />
               </Row>
+              {/* On: it also has criar_tarefa and puts tasks straight in "A fazer" (src/core/task-tools.ts); stored only when on. The Tuca has no task tools. */}
+              {draft.kind !== 'tuca' && (
+                <Row label={L('Cria tarefas direto no Quadro', 'Creates tasks straight on the Board')} sub={L('Ligado, ele põe a tarefa em “A fazer” sem pedir, e você começa quando quiser. Desligado, ele só sugere.', 'On, it puts the task in “To do” without asking, and you start it when you like. Off, it only suggests.')}>
+                  <Toggle label={L('Cria tarefas direto no Quadro', 'Creates tasks straight on the Board')} on={draft.createsTasks === true} onChange={(v) => patch({ createsTasks: v ? true : undefined }, true)} />
+                </Row>
+              )}
               <ReserveModel draft={draft} patch={patch} />
             </Section>
           )}
