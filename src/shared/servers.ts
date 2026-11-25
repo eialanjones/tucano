@@ -66,12 +66,13 @@ export function onServer(url: string, origin: string): boolean {
 export const serverMayHave = (permission: string, requestingOrigin: string, origin: string): boolean =>
   onServer(requestingOrigin, origin) && ['notifications', 'clipboard-sanitized-write', 'media', 'fullscreen'].includes(permission)
 
-// One of a server's preview addresses (src/server/preview.ts): https://5173-ana.example.com for https://ana.example.com.
+// One of a server's preview addresses (src/server/preview.ts): https://5173-ana.example.com for
+// https://ana.example.com, or https://5173.ana.example.com where the server is set to use a dot.
 export function isPreviewOf(url: string, origin: string): boolean {
   try {
     const u = new URL(url)
     const host = new URL(origin).host
-    return u.protocol === 'https:' && new RegExp(`^\\d{2,5}-${host.replace(/[.]/g, '\\.')}$`, 'i').test(u.host)
+    return u.protocol === 'https:' && new RegExp(`^\\d{2,5}[-.]${host.replace(/[.]/g, '\\.')}$`, 'i').test(u.host)
   } catch {
     return false
   }
