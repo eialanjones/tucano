@@ -276,8 +276,11 @@ export class Servers {
         return { action: 'deny' }
       })
     })
-    const stay = (event: { preventDefault: () => void }, url: string): void => {
+    const stay = (event: { preventDefault: () => void; isMainFrame?: boolean }, url: string): void => {
       if (onServer(url, s.origin)) return
+      // An agent's page in the panel is a frame the server sends on to its preview address: it stays
+      // in the frame. The view itself never goes there.
+      if (event.isMainFrame === false && isPreviewOf(url, s.origin)) return
       event.preventDefault()
       if (isOutsideLink(url)) void shell.openExternal(url)
     }

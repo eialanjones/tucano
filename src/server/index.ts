@@ -233,7 +233,9 @@ const preview = publicHost
       publicHost,
       (p) => p !== port && [...servicePorts.values()].some((l) => l.includes(p)),
       // Asked again on every request: the cache is short, and forgets a person removed or changed (personNotice).
-      (person, p) => grants.may(person, { port: p })
+      (person, p) => grants.may(person, { port: p }),
+      Date.now,
+      process.env['TUCANO_PREVIEW_SEP'] === '.' ? '.' : '-'
     )
   : undefined
 
@@ -260,7 +262,7 @@ function sawPeople(list: Person[]): void {
 // policy letting it frame the agents' pages from this server.
 function index(): string {
   return readFileSync(join(page, 'index.html'), 'utf8')
-    .replace('frame-src tucano:', `frame-src 'self' tucano:${privateHost ? ` http://${host}:*` : ''}${publicHost ? ` https://*.${publicHost.split('.').slice(1).join('.')}` : ''}`)
+    .replace('frame-src tucano:', `frame-src 'self' tucano:${privateHost ? ` http://${host}:*` : ''}${publicHost ? ` https://*.${process.env['TUCANO_PREVIEW_SEP'] === '.' ? publicHost : publicHost.split('.').slice(1).join('.')}` : ''}`)
     .replace('<title>', '<meta name="viewport" content="width=device-width, initial-scale=1" />\n    <script src="./tucano-web.js"></script>\n    <title>')
 }
 

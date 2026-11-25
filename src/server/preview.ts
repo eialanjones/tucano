@@ -58,7 +58,10 @@ export class Preview {
     private publicHost: string, // ana.example.com
     private allowed: (port: number) => boolean,
     private may: (person: string, port: number) => Promise<boolean>, // the server's grants, with their short cache
-    private now: () => number = Date.now
+    private now: () => number = Date.now,
+    // Between the port and the address. A dot (5173.ana.example.com) is for a server whose parent
+    // domain's wildcard belongs to something else, so only *.ana.example.com can point here.
+    private sep: '-' | '.' = '-'
   ) {}
 
   private sign(text: string): string {
@@ -67,8 +70,8 @@ export class Preview {
 
   // The port a preview address stands for, or undefined when the address is Tucano's own (or another's).
   portOf(host: string | undefined): number | undefined {
-    const m = /^(\d{2,5})-(.+)$/.exec((host ?? '').toLowerCase())
-    if (!m || m[2] !== this.publicHost.toLowerCase()) return undefined
+    const m = /^(\d{2,5})([-.])(.+)$/.exec((host ?? '').toLowerCase())
+    if (!m || m[2] !== this.sep || m[3] !== this.publicHost.toLowerCase()) return undefined
     const port = Number(m[1])
     return port > 0 && port < 65536 ? port : undefined
   }
@@ -78,7 +81,7 @@ export class Preview {
     const exp = this.now() + GRANT_MS
     const to = path.startsWith('/') && !path.startsWith('//') ? path : '/'
     const who = b64(person)
-    return `https://${port}-${this.publicHost}${ENTER}?e=${exp}&p=${who}&g=${this.sign(`enter.${port}.${who}.${exp}`)}&to=${encodeURIComponent(to)}`
+    return `https://${port}${this.sep}${this.publicHost}${ENTER}?e=${exp}&p=${who}&g=${this.sign(`enter.${port}.${who}.${exp}`)}&to=${encodeURIComponent(to)}`
   }
 
   private cookieValue(port: number, who: string, at: number): string {
